@@ -1,0 +1,40 @@
+# Calls the app's update steps on a schedule. Vercel has no background process, so this is the "engine":
+# live scores + in-play picks, data refresh + predictions, Gemini picks, and web-found matches.
+name: Update data
+on:
+  schedule:
+    - cron: '*/5 * * * *'   # GitHub may delay scheduled runs by a few minutes
+  workflow_dispatch:
+    inputs:
+      loops:
+        description: 'Max repeats per step (use 15 for the very first fill)'
+        default: '6'
+concurrency:
+  group: update
+  cancel-in-progress: false
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    steps:
+      - name: Run steps
+        env:
+          SITE_URL: ${{ secrets.SITE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          LOOPS: ${{ inputs.loops || '4' }}
+        run: |
+          if [ -z "$SITE_URL" ] || [ -z "$CRON_SECRET" ]; then echo "Add the SITE_URL and CRON_SECRET repository secrets first."; exit 1; fi
+          SITE_URL="${SITE_URL%/}"
+          call() {
+            for i in $(seq 1 "$2"); do
+              out=$(curl -sS -m 100 -H "Authorization: Bearer $CRON_SECRET" "$SITE_URL/api/cron?step=$1") || { echo "$1: request failed"; return 0; }
+              echo "$1 [$i]: $out"
+              echo "$out" | grep -q '"done":true' && return 0
+              echo "$out" | grep -q '"error"' && return 0
+              sleep 7
+            done
+          }
+          call live 1
+          call data "$LOOPS"
+          call ai 3
+          call web 3

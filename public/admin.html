@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Admin – Sporty Predictor</title><link rel="stylesheet" href="style.css"></head>
+<body>
+<header class="top"><div class="wrap bar"><div class="brand">⚽ Sporty<b>Predictor</b> <span class="muted">admin</span></div><nav><a href="index.html">← Site</a></nav></div></header>
+<main class="wrap">
+  <section class="card" id="login">
+    <h2>Admin login</h2>
+    <p class="muted">The token is printed in the Termux console when the server starts (also saved in <code>data/admin_token.txt</code>).</p>
+    <input id="token" type="password" placeholder="Admin token"><div class="actions"><button class="primary" id="go">Unlock</button></div>
+    <p class="err" id="lerr" hidden></p>
+  </section>
+  <div id="panel" hidden>
+    <section class="card"><h2>Platform status</h2><div id="summary" class="muted"></div>
+      <div class="actions"><button class="primary" id="run">Run update now</button><button class="ghost" id="bt">Run backtest</button><button class="ghost" id="reload">Refresh</button></div>
+      <p id="msg" class="muted"></p></section>
+    <section class="card"><h2>Add bookmaker odds to a fixture</h2>
+      <p class="muted">Optional. Odds are blended 50/50 with the model and shown with a value check. The prediction is locked at kickoff.</p>
+      <label>Fixture<select id="fx" style="width:100%"></select></label>
+      <div class="row3">
+        <label>1<input id="o1" type="number" step="0.01" min="1.01"></label><label>X<input id="oX" type="number" step="0.01" min="1.01"></label><label>2<input id="o2" type="number" step="0.01" min="1.01"></label>
+        <label>Over 2.5<input id="oO" type="number" step="0.01" min="1.01"></label><label>Under 2.5<input id="oU" type="number" step="0.01" min="1.01"></label><label>&nbsp;</label>
+        <label>BTTS Yes<input id="oY" type="number" step="0.01" min="1.01"></label><label>BTTS No<input id="oN" type="number" step="0.01" min="1.01"></label>
+      </div>
+      <div class="actions"><button class="primary" id="saveOdds">Save odds &amp; re-predict</button></div></section>
+    <section class="card"><h2>API &amp; pipeline logs</h2><div id="logs" class="small-text"></div></section>
+  </div>
+</main>
+<script src="admin.js"></script>
+</body></html>
