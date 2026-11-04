@@ -37,4 +37,4 @@ jobs:
           call live 1
           call data "$LOOPS"
           call ai 3
-          call web 3
+          call web 6

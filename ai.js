@@ -167,13 +167,13 @@ api.analyse = async function analyse(facts) {
 
 /* ------------------------------------------------------------------------- matches found on the web ---------------- */
 
-const DISCOVER_SYSTEM = `You find real upcoming football fixtures with Google Search. List matches kicking off in the date range given, but ONLY from these competitions, and write the competition field exactly as spelled here: ${require('./competitions').NAMES.join('; ')}. Include qualifiers and group/knockout stages of these competitions. Ignore every other competition, youth, women's and friendly matches.
-Rules: only list fixtures the search results actually show; never invent teams, dates or competitions; use full official club names; kickoff must be an ISO 8601 UTC timestamp (convert local times); skip matches whose kickoff time you cannot find; at most 40 matches, most important first.
+const discoverSystem = (names) => `You find real upcoming football fixtures with Google Search. List matches kicking off in the date range given, but ONLY from these competitions, and write the competition field exactly as spelled here: ${names.join('; ')}. Include qualifiers and group/knockout stages of these competitions. Ignore every other competition, youth, women's and friendly matches.
+Rules: only list fixtures the search results actually show; never invent teams, dates or competitions; use full official club names; kickoff must be an ISO 8601 UTC timestamp (convert local times); skip matches whose kickoff time you cannot find; at most 25 matches, most important first. If a competition has no matches in the range (off-season, international break), skip it.
 Reply with a JSON array only: [{"home":"...","away":"...","competition":"...","country":"...","kickoff":"2026-01-31T15:00:00Z"}]`;
 
 /** -> {matches: [{home, away, competition, country, kickoff}], sources} (valid entries only) */
-api.discover = async function discover(from, to) {
-  const { text, sources } = await api.generate({ system: DISCOVER_SYSTEM, user: { from, to }, search: true, maxTokens: 6000, timeoutMs: 120000 });
+api.discover = async function discover(from, to, names = require('./competitions').NAMES) {
+  const { text, sources } = await api.generate({ system: discoverSystem(names), user: { from, to }, search: true, maxTokens: 6000, timeoutMs: 120000 });
   const arr = parseJson(text, 'array');
   const matches = [];
   for (const o of Array.isArray(arr) ? arr : []) {

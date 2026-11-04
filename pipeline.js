@@ -320,16 +320,24 @@ async function addWebMatches(now) {
   pruneWeb();
   if (!ai.enabled() || process.env.AI_WEB === '0') return 0;
   const d = dbm.data();
-  if (d.meta.webAt && now - new Date(d.meta.webAt) < 5 * HOUR) return 0;
+  if (d.meta.webAt && !d.meta.webCursor && now - new Date(d.meta.webAt) < 5 * HOUR) return 0;
   const days = Math.min(7, Number(process.env.AI_WEB_DAYS || 4));
   const delay = Number(process.env.AI_DELAY_MS ?? 5000);
   const day = (n) => new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + n)).toISOString().slice(0, 10);
-  let added = 0, ok = false;
-  for (let i = 0; i < days; i += 2) {
-    if (timeLeft() < 25000) break;
+  // Competitions the data feed already covers are skipped. The rest are searched in small groups so each call is quick.
+  const covered = new Set(leagueCodes());
+  const names = comps.LIST.filter((c) => !(c.code && covered.has(c.code))).map((c) => c.name);
+  const GROUP = Number(process.env.AI_WEB_GROUP || 8);
+  const groups = []; for (let i = 0; i < names.length; i += GROUP) groups.push(names.slice(i, i + GROUP));
+  let cursor = d.meta.webCursor || 0; if (cursor >= groups.length) cursor = 0;
+  let added = 0, ok = false, guard = 0;
+  while (guard++ < groups.length) {
+    if (timeLeft() < 38000) break;
+    const names2 = groups[cursor];
     try {
-      const r = await ai.discover(day(i), day(Math.min(i + 1, days - 1)));
+      const r = await ai.discover(day(0), day(days - 1), names2);
       ok = true;
+      dbm.log('info', 'ai-web', `group ${cursor + 1}/${groups.length}: Gemini listed ${r.matches.length} matches`);
       for (const x of r.matches) {
         const t = new Date(x.kickoff);
         if (t <= now || t - now > (days + 1) * DAY) continue;
@@ -350,11 +358,18 @@ async function addWebMatches(now) {
         if (!d.matches[id]) added++;
         d.matches[id] = { ...(d.matches[id] || {}), id, league: code, date: x.kickoff, status: 'SCHEDULED', matchday: null, stage: null, season: engine.seasonOf(x.kickoff), home: h, away: a, ft: null, ht: null, web: true, sources: r.sources.slice(0, 3) };
       }
-    } catch (e) { dbm.log('warn', 'ai-web', e.message); if (e.fatal) break; }
+      cursor = (cursor + 1) % groups.length; d.meta.webCursor = cursor;
+      if (cursor === 0) { d.meta.webAt = now.toISOString(); break; } // every group searched: wait a few hours before the next round
+    } catch (e) {
+      dbm.log('warn', 'ai-web', `group ${cursor + 1}/${groups.length}: ${e.message}`); if (e.fatal) break;
+      d.meta.webFail = d.meta.webFail || {}; d.meta.webFail[cursor] = (d.meta.webFail[cursor] || 0) + 1;
+      if (d.meta.webFail[cursor] >= 2) { d.meta.webFail[cursor] = 0; cursor = (cursor + 1) % groups.length; d.meta.webCursor = cursor; if (cursor === 0) { d.meta.webAt = now.toISOString(); break; } } // try a group twice, then move on
+      else break;
+    }
     dbm.save();
-    if (i + 2 < days && delay) await sleep(Math.min(delay, Math.max(0, timeLeft() - 25000)));
+    if (delay) await sleep(Math.min(delay, Math.max(0, timeLeft() - 38000)));
   }
-  if (ok) d.meta.webAt = now.toISOString();
+  d.meta.webCursor = cursor;
   if (added) dbm.log('info', 'ai-web', `${added} extra matches found by web search`);
   return added;
 }
@@ -533,6 +548,16 @@ async function prefetch() {
   return n;
 }
 
+/** Football news for the dashboard (Gemini + Google Search), refreshed by the scheduler about every 3 hours. */
+async function refreshNews() {
+  if (!ai.enabled() || dbm.cache.get('news') !== undefined || timeLeft() < 35000) return false;
+  const d = dbm.data();
+  const names = leagueCodes().map((c) => d.leagues[c]?.name).filter(Boolean).slice(0, 8);
+  if (!names.length) return false;
+  try { dbm.cache.set('news', { ...(await ai.news(names)), at: new Date().toISOString() }, 3 * HOUR); return true; }
+  catch (e) { dbm.log('warn', 'ai-news', e.message); return false; }
+}
+
 /** Retry counters used up while Gemini was failing (retired model) are given back once. */
 function resetTriesOnce() {
   const d = dbm.data(); if (d.meta.triesReset === 'v6.1') return;
@@ -559,12 +584,12 @@ async function runStep(step, { now = new Date(), budgetMs = 48000 } = {}) {
       Object.assign(out, r, { prefetched: pf }); out.done = r.left === 0;
       d.meta.lastRun = { ...(d.meta.lastRun || {}), at: now.toISOString(), ms: 0, settled: 0, predicted: Object.keys(d.predictions).length };
     } else if (step === 'ai') {
-      out.researched = await addResearch(now); out.aiPicks = await addAiPicks(now); await resolveEarly(now);
+      out.researched = await addResearch(now); out.aiPicks = await addAiPicks(now); await resolveEarly(now); out.news = await refreshNews();
       const pending = upcoming(now, 14 * DAY).filter((p) => p.best?.source !== 'ai' && (p.aiTries || 0) < 3).length;
       out.done = !ai.enabled() || pending === 0 || timeLeft() > 20000;
     } else if (step === 'web') {
       out.found = await addWebMatches(now); await resolveWebResults(now); out.webPicks = await addWebPicks(now);
-      out.done = timeLeft() > 20000;
+      out.done = !ai.enabled() || !dbm.data().meta.webCursor;
     } else return { step, done: true, error: 'unknown step' };
     dbm.save();
   } catch (e) { dbm.log('error', 'pipeline', `${step}: ${e.message}`); out.error = e.message; out.done = true; }

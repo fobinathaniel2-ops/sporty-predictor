@@ -90,6 +90,8 @@ route('GET', /^\/api\/status$/, () => {
       predictions: Object.keys(dd.predictions).length, verified: Object.values(dd.predictions).filter((p) => p.settled && !p.void).length,
     },
     lastError: dd.apiLogs.find((l) => l.level === 'error')?.message || null,
+    web: { competitions: Object.values(dd.leagues).filter((l) => l.web).length, matches: Object.values(dd.matches).filter((m) => m.web).length, lastFullRound: dd.meta.webAt || null, nextGroup: dd.meta.webCursor || 0 },
+    recent: dd.apiLogs.filter((l) => l.level !== 'info' || l.source === 'ai-web').slice(0, 6).map((l) => `${l.at.slice(11, 16)} ${l.source}: ${l.message}`),
   };
 });
 
@@ -300,6 +302,10 @@ route('GET', /^\/api\/news$/, async (req) => {
   const names = active().map((c) => d().leagues[c]?.name).filter(Boolean).slice(0, 8);
   if (!names.length) return { enabled: true, items: [], sources: [] };
   try {
+    if (dbm.mode() === 'remote') { // hosted: a web request may not wait for a slow Gemini search; the scheduler prepares the news
+      const v = dbm.cache.getStale('news');
+      return v ? { enabled: true, ...v, stale: dbm.cache.get('news') === undefined } : { enabled: true, items: [], sources: [], error: 'The news is being prepared and appears within a few minutes.' };
+    }
     const r = await pipeline.cached('news', 3 * HOUR, async () => ({ ...(await ai.news(names)), at: new Date().toISOString() }));
     return { enabled: true, ...r.value, stale: r.stale };
   } catch (e) { return { enabled: true, items: [], sources: [], error: e.message }; }
