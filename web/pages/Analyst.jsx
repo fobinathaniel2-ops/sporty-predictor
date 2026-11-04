@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import Icon from '../ui/Icon';
-import { Async, Crest, Empty, Note, Ring, Section, Seg, Skel, SkelCards, SkelList, Tag } from '../ui/base';
+import { A, Async, Crest, Empty, Note, Ring, Section, Seg, Skel, SkelCards, SkelList, Tag } from '../ui/base';
 import { Columns } from '../ui/charts';
-import { FixtureBrowser } from '../ui/match';
+import { FixtureBrowser, MatchList } from '../ui/match';
 import { useApi, useApp } from '../lib/app';
 import { GROUPS, pct } from '../lib/format';
+import { dayKey, relDay } from '../lib/format';
 
 const acc = (x) => (x == null ? '–' : `${Math.round(x * 100)}%`);
 
@@ -86,6 +87,39 @@ function HowItWorks() {
   );
 }
 
+
+function Finished() {
+  const { status } = useApp();
+  const q = useApi('/api/results?picks=1&limit=300', { poll: 120000 });
+  const [league, setLeague] = useState('');
+  const [res, setRes] = useState('all');
+  const [group, setGroup] = useState('All');
+  return (
+    <Async q={q} skeleton={<SkelList n={5} />}>{(all) => {
+      const list = all.filter((m) => m.prediction && (!league || m.league.code === league) && (group === 'All' || m.prediction.best?.market === group)
+        && (res === 'all' || (res === 'won' && m.prediction.best?.correct === true) || (res === 'lost' && m.prediction.best?.correct === false) || (res === 'void' && m.prediction.settled && typeof m.prediction.best?.correct !== 'boolean')));
+      const won = list.filter((m) => m.prediction.best?.correct === true).length, lost = list.filter((m) => m.prediction.best?.correct === false).length;
+      const days = [...new Map(list.map((m) => [dayKey(new Date(m.date)), m.date])).entries()];
+      return (
+        <div>
+          <div className="chips">
+            <button className={`chip ${league === '' ? 'on' : ''}`} onClick={() => setLeague('')}>All competitions</button>
+            {(status?.leagues || []).map((l) => <button key={l.code} className={`chip ${league === l.code ? 'on' : ''}`} onClick={() => setLeague(l.code)}><Crest team={{ name: l.name, crest: l.emblem }} size={18} />{l.name}</button>)}
+          </div>
+          <div className="chips" style={{ marginTop: 8 }}>{GROUPS.map((g) => <button key={g} className={`chip ${group === g ? 'on' : ''}`} onClick={() => setGroup(g)}>{g === 'All' ? 'All markets' : g}</button>)}</div>
+          <div className="between" style={{ margin: '12px 0', flexWrap: 'wrap', gap: 8 }}>
+            <Seg value={res} onChange={setRes} options={[['all', 'All'], ['won', 'Won'], ['lost', 'Lost']]} />
+            <span className="sm muted"><b className="g">{won} won</b> · <b style={{ color: 'var(--red)' }}>{lost} lost</b>{won + lost ? ` · ${Math.round((won / (won + lost)) * 100)}%` : ''} · {list.length} matches</span>
+          </div>
+          {!list.length ? <Empty icon="results" title="No finished picks here yet">A pick appears here after its match ends and the result has been checked. <A to="/ai" className="g">See upcoming picks</A></Empty> : days.map(([k, iso]) => (
+            <div key={k}><div className="sec" style={{ margin: '14px 0 8px' }}><h3 className="muted">{relDay(iso)}</h3></div><MatchList matches={list.filter((m) => dayKey(new Date(m.date)) === k)} grouped={!league} /></div>
+          ))}
+          <p className="xs dim" style={{ marginTop: 12 }}>Every pick was saved before kick-off, except picks marked LIVE PICK or WEB, which are counted separately in Track record.</p>
+        </div>);
+    }}</Async>
+  );
+}
+
 export default function Analyst() {
   const { status } = useApp();
   const q = useApi('/api/analyst', { poll: 120000 });
@@ -104,9 +138,10 @@ export default function Analyst() {
           {status?.demo && <Tag kind="demo">DEMO DATA</Tag>}
         </div>
       </div>
-      <div style={{ margin: '16px 0' }}><Seg value={view} onChange={setView} options={[['picks', 'Upcoming picks'], ['record', 'Track record'], ['how', 'How it works']]} /></div>
+      <div style={{ margin: '16px 0' }}><Seg value={view} onChange={setView} options={[['picks', 'Picks'], ['finished', 'Finished picks'], ['record', 'Track record'], ['how', 'How it works']]} /></div>
       {view === 'how' && <><HowItWorks /><div style={{ marginTop: 14 }}><Note>Nothing here is a guarantee. Football is unpredictable, and a pick rated 75% still loses about one time in four. Please gamble responsibly.</Note></div></>}
       {view === 'record' && <Record />}
+      {view === 'finished' && <Finished />}
       {view === 'picks' && (
         <FixtureBrowser sortable filterCount={(group !== 'All' ? 1 : 0) + (conf !== 'All' ? 1 : 0)} filterSummary={[group !== 'All' && group, conf !== 'All' && `${conf} confidence`].filter(Boolean).join(' · ')}
           filter={(m) => m.prediction && (group === 'All' || m.prediction.best?.market === group) && (conf === 'All' || m.prediction.confidence === conf)}

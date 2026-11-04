@@ -4,6 +4,7 @@ import Icon from './ui/Icon';
 import { A, Tag } from './ui/base';
 import { AppProvider, go, useApp, useRoute } from './lib/app';
 import SearchBox from './ui/SearchBox';
+import Bell from './ui/Notifications';
 import Home from './pages/Home';
 import Matches from './pages/Matches';
 import MatchCentre from './pages/MatchCentre';
@@ -78,7 +79,7 @@ function Shell() {
       <Side path={route.path} />
       {status?.demo && <div className="demoBanner">DEMO MODE · simulated league for testing only</div>}
       <div className="main">
-        <header className="topbar"><div className="logo-m"><Logo /></div><SearchBox /></header>
+        <header className="topbar"><div className="logo-m"><Logo /></div><SearchBox /><Bell /></header>
         <main className="page" key={route.path.join('/')}><Route route={route} /></main>
         <footer className="disc">
           Sporty Predictor is an analytical tool, not betting advice, and is not affiliated with SportyBet or any bookmaker. It does not take bets. Probabilities are estimates and no pick is guaranteed. Gambling can be addictive: 18+, bet only what you can afford to lose.

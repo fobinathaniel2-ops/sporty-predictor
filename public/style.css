@@ -226,3 +226,8 @@ footer.disc{margin-top:40px;padding:18px 0;border-top:1px solid var(--line);colo
 .calm .modal,.lite .modal{animation:none}
 .modal .chips{flex-wrap:wrap;overflow:visible;margin-top:12px}
 .modal .days{margin-top:4px}
+.bell{position:relative;flex:none}
+.bdot{position:absolute;top:-2px;right:-2px;min-width:18px;height:18px;padding:0 4px;border-radius:99px;background:var(--g);color:#02150b;font-size:11px;font-weight:800;display:grid;place-items:center}
+.nitem{display:flex;gap:12px;align-items:flex-start;padding:12px 8px;border-bottom:1px solid var(--line);border-radius:12px}
+.nitem.new{background:rgba(45,255,138,.07)}
+.nico{font-size:20px;line-height:1.2}

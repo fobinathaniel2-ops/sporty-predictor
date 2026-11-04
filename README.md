@@ -24,3 +24,10 @@ Competitions are fixed to the list in `competitions.js`. LEAGUES (e.g. PL,PD,CL 
 - Early payout picks (1UP / 2UP) are included as markets; they are settled exactly when the goal timeline is available.
 - Data is stored in `data/` as JSON files. Keys stay on the server.
 - To edit the interface: `web/` holds the React source; `./build.sh` rebuilds `public/app.js` (needs esbuild).
+
+## Notifications
+A bell in the top bar lists goals, kick-offs, full-time scores, pick results and 30-minute reminders. Under Profile → Notifications
+a device can switch on phone alerts that also arrive when the app is closed (Web Push; keys are created automatically,
+or set VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY / VAPID_SUBJECT). Alerts follow your starred teams and leagues, or all matches.
+On Vercel the scheduler's "live" step sends them, so alerts can be a few minutes behind (see DEPLOY.md for a once-a-minute option).
+Browsers need HTTPS for push: the Vercel address works; on Termux alerts work in the open app and on localhost.

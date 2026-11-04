@@ -17,6 +17,7 @@ const timeLeft = () => deadline - Date.now();
 const setDeadline = (t) => { deadline = t; ai.deadline = t; };
 // Competitions in football-data.org's free plan, in display order.
 const comps = require('./competitions');
+const notify = require('./notify');
 const FREE_COMPETITIONS = comps.FREE_CODES;
 let running = false;
 let nextRunAt = null;
@@ -132,6 +133,12 @@ function lockStarted(now) {
 
 /** One request refreshes every match of yesterday and today, but only while a match could be in play. */
 async function liveTick(now = new Date()) {
+  const n = await liveTickInner(now);
+  try { await notify.deliver(notify.scan(now)); } catch (e) { dbm.log('warn', 'notify', e.message); }
+  return n;
+}
+
+async function liveTickInner(now) {
   const prov = provider();
   if (!prov?.getMatchesBetween || running) return 0;
   const d = dbm.data(); const codes = leagueCodes();
@@ -575,7 +582,8 @@ async function runStep(step, { now = new Date(), budgetMs = 48000 } = {}) {
   try {
     if (step === 'live') {
       await liveTickHosted(now, { lock: false }).then((n) => { out.matches = n; });
-      lockStarted(now); settleAll(now); predictLive(now); out.done = true;
+      lockStarted(now); settleAll(now); predictLive(now); notify.ensureVapid();
+      const fresh = notify.scan(now); out.events = fresh.length; out.pushed = await notify.deliver(fresh, { deadline }); out.done = true;
     } else if (step === 'data') {
       const minAgeMin = Number(process.env.DATA_REFRESH_MIN || 150);
       const r = await refreshData(now, { minAgeMin });
@@ -584,7 +592,8 @@ async function runStep(step, { now = new Date(), budgetMs = 48000 } = {}) {
       Object.assign(out, r, { prefetched: pf }); out.done = r.left === 0;
       d.meta.lastRun = { ...(d.meta.lastRun || {}), at: now.toISOString(), ms: 0, settled: 0, predicted: Object.keys(d.predictions).length };
     } else if (step === 'ai') {
-      out.researched = await addResearch(now); out.aiPicks = await addAiPicks(now); await resolveEarly(now); out.news = await refreshNews();
+      out.news = await refreshNews(); // first: it is one quick call and the picks below can use up all the time
+      out.researched = await addResearch(now); out.aiPicks = await addAiPicks(now); await resolveEarly(now);
       const pending = upcoming(now, 14 * DAY).filter((p) => p.best?.source !== 'ai' && (p.aiTries || 0) < 3).length;
       out.done = !ai.enabled() || pending === 0 || timeLeft() > 20000;
     } else if (step === 'web') {

@@ -12,7 +12,7 @@ function News() {
   if (q.loading && !q.data) return <div className="grid g2"><Skel h={110} r={18} /><Skel h={110} r={18} /></div>;
   const d = q.data;
   if (!d || !d.enabled) return <Note info>Live football news is compiled by Gemini from a web search. Set <b>GEMINI_API_KEY</b> to turn it on.</Note>;
-  if (d.error && !d.items.length) return <Note>News is unavailable right now: {d.error}</Note>;
+  if (d.error && !d.items.length) return <Note info={/being prepared/.test(d.error)}>{/being prepared/.test(d.error) ? d.error : `News is unavailable right now: ${d.error}`}</Note>;
   if (!d.items.length) return <Empty icon="news" title="No news yet">Nothing was found for your competitions.</Empty>;
   return (
     <>

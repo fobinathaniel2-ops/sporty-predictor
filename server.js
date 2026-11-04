@@ -12,6 +12,7 @@ const engine = require('./engine');
 const stats = require('./stats');
 const comps = require('./competitions');
 const analysisMod = require('./analysis');
+const notify = require('./notify');
 
 dbm.load();
 const PORT = process.env.PORT || 3000;
@@ -90,6 +91,7 @@ route('GET', /^\/api\/status$/, () => {
       predictions: Object.keys(dd.predictions).length, verified: Object.values(dd.predictions).filter((p) => p.settled && !p.void).length,
     },
     lastError: dd.apiLogs.find((l) => l.level === 'error')?.message || null,
+    push: !!notify.vapidPublic(),
     web: { competitions: Object.values(dd.leagues).filter((l) => l.web).length, matches: Object.values(dd.matches).filter((m) => m.web).length, lastFullRound: dd.meta.webAt || null, nextGroup: dd.meta.webCursor || 0 },
     recent: dd.apiLogs.filter((l) => l.level !== 'info' || l.source === 'ai-web').slice(0, 6).map((l) => `${l.at.slice(11, 16)} ${l.source}: ${l.message}`),
   };
@@ -113,8 +115,8 @@ route('GET', /^\/api\/fixtures$/, (req, res, p, q) => {
 route('GET', /^\/api\/live$/, () => Object.values(d().matches).filter((m) => m.status === 'LIVE' && inCodes(m)).sort(byDate).map((m) => matchView(m)));
 
 route('GET', /^\/api\/results$/, (req, res, p, q) => {
-  const n = Math.min(Number(q.limit) || 40, 100);
-  return Object.values(d().matches).filter((m) => inCodes(m) && m.status === 'FINISHED' && (!q.league || m.league === q.league))
+  const n = Math.min(Number(q.limit) || 40, 300);
+  return Object.values(d().matches).filter((m) => inCodes(m) && m.status === 'FINISHED' && (!q.league || m.league === q.league) && (!q.picks || d().predictions[m.id]))
     .sort(byDate).reverse().slice(0, n).map((m) => matchView(m));
 });
 
@@ -322,11 +324,49 @@ function cleanPrefs(b = {}) {
   return {
     favTeams: list(b.favTeams, 40, /^[\w-]{1,24}$/), favLeagues: list(b.favLeagues, 20, /^[A-Z0-9]{2,6}$/),
     dataSaver: !!b.dataSaver, reduceMotion: !!b.reduceMotion, timeFormat: b.timeFormat === '12h' ? '12h' : '24h',
-    startPage: ['home', 'matches', 'leagues', 'ai'].includes(b.startPage) ? b.startPage : 'home',
+    startPage: ['home', 'fixtures', 'live', 'matches', 'leagues', 'ai'].includes(b.startPage) ? b.startPage : 'home',
+    notify: {
+      on: !!b.notify?.on, scope: b.notify?.scope === 'all' ? 'all' : 'favourites',
+      types: Object.fromEntries(notify.TYPES.map((t) => [t, b.notify?.types ? b.notify.types[t] !== false : true])),
+    },
   };
 }
 route('GET', /^\/api\/prefs$/, async (req) => (await dbm.prefs.get(clientId(req))) || cleanPrefs());
-route('PUT', /^\/api\/prefs$/, async (req, res, p, q, body) => { limit(req, 'prefs', 60, HOUR); const v = cleanPrefs(body); await dbm.prefs.set(clientId(req), v); return v; });
+route('PUT', /^\/api\/prefs$/, async (req, res, p, q, body) => { limit(req, 'prefs', 60, HOUR); const id = clientId(req); const v = cleanPrefs(body); await dbm.prefs.set(id, v);
+  const rec = await dbm.push.get(id).catch(() => null);
+  if (rec) await dbm.push.set(id, { ...rec, prefs: { favTeams: v.favTeams, favLeagues: v.favLeagues, notify: v.notify } }).catch(() => {});
+  return v; });
+
+
+/* ------------------------------------------------------------------------------------------------- notifications ---- */
+
+route('GET', /^\/api\/notifications$/, (req, res, p, q) => {
+  const since = q.since ? new Date(q.since) : null;
+  const events = (d().notifications || []).filter((e) => !since || isNaN(since) || new Date(e.at) > since).slice(0, 100);
+  return { events, now: new Date().toISOString() };
+});
+
+route('GET', /^\/api\/push\/key$/, () => { const key = notify.vapidPublic({ create: dbm.mode() === 'file' }); return { key, supported: !!key }; });
+
+route('PUT', /^\/api\/push$/, async (req, res, p, q, body) => {
+  limit(req, 'push', 30, HOUR);
+  const id = clientId(req);
+  if (!body.subscription) { await dbm.push.del(id); return { ok: true, on: false }; }
+  if (!notify.validSubscription(body.subscription)) throw new HttpError(400, 'This browser sent an unsupported push subscription');
+  const sub = { endpoint: body.subscription.endpoint, keys: { p256dh: body.subscription.keys.p256dh, auth: body.subscription.keys.auth } };
+  const saved = (await dbm.prefs.get(id)) || cleanPrefs();
+  await dbm.push.set(id, { sub, prefs: { favTeams: saved.favTeams || [], favLeagues: saved.favLeagues || [], notify: { ...cleanPrefs(saved).notify, on: true } }, at: new Date().toISOString() });
+  return { ok: true, on: true };
+});
+
+route('PUT', /^\/api\/push\/test$/, async (req) => {
+  limit(req, 'pushtest', 5, HOUR);
+  const rec = await dbm.push.get(clientId(req));
+  if (!rec) throw new HttpError(404, 'This device is not subscribed yet');
+  const r = await notify.sendOne(rec.sub, { title: 'Alerts are on ✅', body: 'You will get goals, kick-offs and results for your favourites.', url: '/#/profile', tag: 'test', type: 'test' });
+  if (r.gone) await dbm.push.del(clientId(req)).catch(() => {});
+  return { ok: r.ok, status: r.status };
+});
 
 /* --------------------------------------------------------------------------------------- scheduled steps (hosted) -- */
 

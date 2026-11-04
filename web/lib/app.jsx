@@ -77,7 +77,8 @@ export const setQuery = (key, value) => {
 const Ctx = createContext(null);
 export const useApp = () => useContext(Ctx);
 
-const DEFAULTS = { favTeams: [], favLeagues: [], dataSaver: false, reduceMotion: false, timeFormat: '24h', startPage: 'home' };
+export const NOTIFY_DEFAULT = { on: false, scope: 'favourites', types: { goal: true, kickoff: true, fulltime: true, result: true, soon: true } };
+const DEFAULTS = { favTeams: [], favLeagues: [], dataSaver: false, reduceMotion: false, timeFormat: '24h', startPage: 'home', notify: NOTIFY_DEFAULT };
 
 export function AppProvider({ children }) {
   const [prefs, setPrefsState] = useState(() => ({ ...DEFAULTS, ...store.get('sp_prefs', {}) }));

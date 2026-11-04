@@ -40,7 +40,7 @@ function makeStore(file, blank, delay) {
 
 const main = makeStore('db.json', empty, 600);
 const cacheStore = makeStore('cache.json', () => ({ entries: {} }), 2500);
-const prefStore = makeStore('prefs.json', () => ({ clients: {} }), 800);
+const prefStore = makeStore('prefs.json', () => ({ clients: {}, push: {} }), 800);
 
 let loaded = false;
 function load() {
@@ -177,7 +177,31 @@ const prefs = {
   },
 };
 
+/** Devices that switched on push alerts: id -> { sub, prefs, at }. One Redis hash when hosted. */
+const push = {
+  async get(id) {
+    if (remoteOn()) { const v = await redis(['HGET', 'sp:push', id]); return v ? JSON.parse(v) : null; }
+    return (prefStore.data.push || {})[id] || null;
+  },
+  async set(id, rec) {
+    if (remoteOn()) { await redis(['HSET', 'sp:push', id, JSON.stringify(rec)]); return; }
+    (prefStore.data.push = prefStore.data.push || {})[id] = rec; prefStore.save();
+  },
+  async del(id) {
+    if (remoteOn()) { await redis(['HDEL', 'sp:push', id]); return; }
+    if (prefStore.data.push) delete prefStore.data.push[id]; prefStore.save();
+  },
+  async all() {
+    if (remoteOn()) {
+      const flat = (await redis(['HGETALL', 'sp:push'])) || []; const out = [];
+      for (let i = 0; i < flat.length; i += 2) { try { out.push({ id: flat[i], ...JSON.parse(flat[i + 1]) }); } catch { /* skip */ } }
+      return out;
+    }
+    return Object.entries(prefStore.data.push || {}).map(([id, r]) => ({ id, ...r }));
+  },
+};
+
 process.on('exit', flush);
 ['SIGINT', 'SIGTERM'].forEach((s) => process.on(s, () => process.exit(0)));
 
-module.exports = { load, save, flush, flushAsync, hydrate, mode, overlay, data, log, cache, prefs, DIR, VERSION };
+module.exports = { load, save, flush, flushAsync, hydrate, mode, overlay, data, log, cache, prefs, push, DIR, VERSION };

@@ -8,6 +8,10 @@ const fake = http.createServer((req, res) => {
     const a = JSON.parse(b); commands++; let r = null;
     if (a[0] === 'SET') { if (a.includes('NX') && store.has(a[1])) r = null; else { store.set(a[1], a[2]); r = 'OK'; } }
     else if (a[0] === 'GET') r = store.get(a[1]) ?? null;
+    else if (a[0] === 'HSET') { const h = store.get(a[1]) || {}; h[a[2]] = a[3]; store.set(a[1], h); r = 1; }
+    else if (a[0] === 'HGET') r = (store.get(a[1]) || {})[a[2]] ?? null;
+    else if (a[0] === 'HDEL') { const h = store.get(a[1]) || {}; delete h[a[2]]; r = 1; }
+    else if (a[0] === 'HGETALL') r = Object.entries(store.get(a[1]) || {}).flat();
     else if (a[0] === 'MGET') r = a.slice(1).map((k) => store.get(k) ?? null);
     res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ result: r }));
   });
@@ -59,6 +63,11 @@ fake.listen(0, async () => {
   // a web request must never overwrite the pipeline's data
   const snap = new Map(store); await get('/api/leagues'); await get('/api/accuracy');
   for (const k of ['sp:core', 'sp:m0', 'sp:p0']) assert.strictEqual(store.get(k), snap.get(k), k + ' untouched by web requests');
+  await dbm.push.set('devA', { sub: { endpoint: 'https://fcm.googleapis.com/x' }, prefs: { notify: { on: true } } });
+  assert.deepStrictEqual((await dbm.push.all()).map((x) => x.id), ['devA'], 'push devices stored in a Redis hash');
+  await dbm.push.del('devA'); assert.strictEqual((await dbm.push.all()).length, 0);
+  const ntf = await get('/api/notifications'); assert(ntf.status === 200 && Array.isArray(ntf.body.events));
+  const step = await get('/api/cron?step=live', auth); assert(step.body.done && 'events' in step.body, 'live step reports events: ' + JSON.stringify(step.body));
   console.log(`OK hosted mode (${commands} Redis commands, ${store.size} keys, ${before} matches, ${pBefore} picks)`);
   server.close(); fake.close(); process.exit(0);
 });
