@@ -398,7 +398,7 @@ async function addWebPicks(now) {
           got.add(m.id); n++;
         }
         for (const m of chunk) if (!got.has(m.id)) m.webTries = (m.webTries || 0) + 1;
-      } catch (e) { for (const m of chunk) m.webTries = (m.webTries || 0) + 1; dbm.log('warn', 'ai-web', e.message); if (e.fatal) break; }
+      } catch (e) { if (!e.fatal) for (const m of chunk) m.webTries = (m.webTries || 0) + 1; dbm.log('warn', 'ai-web', e.message); if (e.fatal) break; }
       dbm.save();
       if (i + 6 < list.length && delay) await sleep(Math.min(delay, Math.max(0, timeLeft() - 22000)));
     }
@@ -420,7 +420,7 @@ async function resolveWebResults(now) {
       const res = await ai.results(chunk.map((m) => ({ key: m.id, competition: d.leagues[m.league]?.name, home: m.home.name, away: m.away.name, kickoff: m.date })));
       for (const r of res) { const m = d.matches[r.key]; m.status = 'FINISHED'; m.ft = r.ft; m.ht = r.ht; m.resultSource = 'web'; n++; }
       for (const m of chunk) if (m.status === 'SCHEDULED') { m.resTries = (m.resTries || 0) + 1; if (m.resTries >= 4 && now - new Date(m.date) > 2 * DAY) m.status = 'OTHER'; }
-    } catch (e) { for (const m of chunk) m.resTries = (m.resTries || 0) + 1; dbm.log('warn', 'ai-web', e.message); if (e.fatal) break; }
+    } catch (e) { if (!e.fatal) for (const m of chunk) m.resTries = (m.resTries || 0) + 1; dbm.log('warn', 'ai-web', e.message); if (e.fatal) break; }
     dbm.save();
   }
   if (n) { settleAll(now); dbm.save(); }
@@ -480,7 +480,7 @@ async function addAiPicks(now) {
       }
       for (const p of chunk) if (!got.has(p.matchId)) p.aiTries = (p.aiTries || 0) + 1;
     } catch (e) {
-      for (const p of chunk) p.aiTries = (p.aiTries || 0) + 1;
+      if (!e.fatal) for (const p of chunk) p.aiTries = (p.aiTries || 0) + 1; // a bad key/model/quota is not the match's fault
       dbm.log('warn', 'ai', e.message);
       if (e.fatal) break; // bad key / quota / wrong model: stop this run
     }
@@ -533,10 +533,19 @@ async function prefetch() {
   return n;
 }
 
+/** Retry counters used up while Gemini was failing (retired model) are given back once. */
+function resetTriesOnce() {
+  const d = dbm.data(); if (d.meta.triesReset === 'v6.1') return;
+  for (const p of Object.values(d.predictions)) if (p.aiTries < 9) p.aiTries = 0;
+  for (const m of Object.values(d.matches)) { delete m.webTries; delete m.resTries; }
+  delete d.meta.webAt; d.meta.triesReset = 'v6.1'; dbm.save();
+}
+
 /** One scheduled step. Returns { step, done, ... }; the scheduler repeats a step until done is true. */
 async function runStep(step, { now = new Date(), budgetMs = 48000 } = {}) {
   if (!provider()) return { step, done: true, error: 'FOOTBALL_DATA_KEY not set' };
   setDeadline(Date.now() + budgetMs);
+  resetTriesOnce();
   const d = dbm.data(); const out = { step };
   try {
     if (step === 'live') {
@@ -564,6 +573,7 @@ async function runStep(step, { now = new Date(), budgetMs = 48000 } = {}) {
 }
 
 async function run(now = new Date()) {
+  resetTriesOnce();
   if (!provider()) {
     if (!warnedNoKey) { warnedNoKey = true; dbm.log('warn', 'pipeline', 'FOOTBALL_DATA_KEY is not set: no real data to load.'); }
     return { error: 'FOOTBALL_DATA_KEY not set' };

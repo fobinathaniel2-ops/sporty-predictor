@@ -9,7 +9,23 @@
  */
 const dbm = require('./db');
 
-const model = () => process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+const FALLBACK_MODEL = 'gemini-flash-latest'; // Google's alias for the newest Flash model
+const found = { name: null, at: 0 };
+const model = () => process.env.GEMINI_MODEL || found.name || FALLBACK_MODEL;
+
+/** Models are retired often. Unless GEMINI_MODEL is set, ask Google which Flash models this key may use and take the newest. */
+async function discoverModel() {
+  const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', { headers: { 'x-goog-api-key': process.env.GEMINI_API_KEY }, signal: AbortSignal.timeout(10000) });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  const list = ((await r.json()).models || [])
+    .filter((m) => (m.supportedGenerationMethods || []).includes('generateContent'))
+    .map((m) => String(m.name).replace(/^models\//, ''))
+    .filter((n) => /^gemini-\d+(\.\d+)?-flash$/.test(n) || /^gemini-\d+(\.\d+)?-flash-preview/.test(n))
+    .filter((n) => !/image|tts|audio|live|embed|robot|computer|thinking|exp/.test(n));
+  const score = (n) => { const v = parseFloat(n.match(/gemini-(\d+(?:\.\d+)?)/)[1]); return v * 10 + (/preview/.test(n) ? 0 : 1); };
+  list.sort((a, b) => score(b) - score(a));
+  return list[0] || null;
+}
 const enabled = () => !!process.env.GEMINI_API_KEY && process.env.AI_DISABLED !== '1';
 const dailyCap = () => Number(process.env.AI_DAILY_CAP || 250);
 
@@ -36,11 +52,18 @@ api.generate = async function generate({ system, user, search = false, json = fa
     generationConfig: { temperature: search ? 0.2 : 0.3, maxOutputTokens: maxTokens, ...(json && !search ? { responseMimeType: 'application/json' } : {}) },
     ...(search ? { tools: [{ google_search: {} }] } : {}),
   };
+  const call = (m) => fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(m)}:generateContent`, {
+    method: 'POST', signal: ctrl.signal, headers: { 'content-type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY }, body: JSON.stringify(body),
+  });
   let r;
   try {
-    r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model())}:generateContent`, {
-      method: 'POST', signal: ctrl.signal, headers: { 'content-type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY }, body: JSON.stringify(body),
-    });
+    if (!process.env.GEMINI_MODEL && !found.name && Date.now() - found.at > 6 * 3600000) { found.at = Date.now(); try { found.name = (await discoverModel()) || null; } catch { /* use the alias */ } }
+    r = await call(model());
+    if (r.status === 404 && !process.env.GEMINI_MODEL) { // retired or not available to this key: look again and retry once
+      let next = null; try { next = await discoverModel(); } catch { /* ignore */ }
+      if (next && next !== model()) { found.name = next; found.at = Date.now(); r = await call(next); }
+      else if (model() !== FALLBACK_MODEL) { found.name = null; r = await call(FALLBACK_MODEL); }
+    }
   } catch (e) { throw new AiError(`Gemini request failed: ${e.name === 'AbortError' ? 'timeout' : e.message}`, false); } finally { clearTimeout(timer); }
   if (!r.ok) {
     let detail = ''; try { detail = (await r.json()).error?.message || ''; } catch { /* ignore */ }
