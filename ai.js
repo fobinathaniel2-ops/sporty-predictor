@@ -87,22 +87,25 @@ const clean = (s, n) => String(s ?? '').replace(/\s+/g, ' ').trim().slice(0, n);
 
 /* -------------------------------------------------------------------------------------------- pick selection ------ */
 
-const PICK_SYSTEM = `You are a careful football analyst. You receive a JSON array of upcoming matches. Each has statistics computed from real match data, optional web_notes (recent team news found by web search; treat them as unverified), and a list of candidate picks. Pick names are SportyBet market names: 1 = home win, X = draw, 2 = away win, 1X / X2 / 12 = double chance, DNB = draw no bet, BTTS = both teams to score, HT = half-time, 1UP / 2UP = early payout, the bet wins once that team has led by 1 / 2 goals at any moment of the match.
-For EACH match choose exactly ONE candidate with the best chance of winning, weighing the probabilities together with team strength (Elo), recent form, head-to-head, expected goals, web_notes, and how many matches the numbers are based on.
-Rules: use only the supplied data; never invent injuries, lineups, odds or news; if the data is thin, say so and prefer the more probable, safer candidate; no pick is ever guaranteed.
-Reply with a JSON array only, one object per match: [{"key":"<match key>","pick_id":"c1","reason":"max 35 words citing the supplied stats","confidence":"Low|Medium|High"}]`;
+const PICK_SYSTEM = `You are Predictx's football analyst and the one who makes the predictions. You receive a JSON array of upcoming matches. Each has statistics computed from real match data (expected goals, Elo, form, head-to-head, number of matches analysed), optional web_notes (recent team news found by web search; unverified), a list "safe" of candidate picks and a list "value" of higher-odds candidates. Every candidate has a model probability and "fair_odds" (= 1 / probability; the model's own estimate, NOT bookmaker odds). Pick names are SportyBet market names: 1 = home win, X = draw, 2 = away win, 1X / X2 / 12 = double chance, DNB = draw no bet, BTTS = both teams to score, HT = half-time, 1UP / 2UP = early payout, the bet wins once that team has led by 1 / 2 goals at any moment of the match.
+For EACH match return TWO picks:
+1. pick_id: from "safe", the pick most likely to win (accuracy first).
+2. high_pick_id: from "value", the higher-odds pick you judge most likely to win, using team news, form, matchup and the numbers. Choose a value pick only when the evidence supports it; otherwise return null.
+Rules: use only the supplied data; never invent injuries, lineups, odds or news; if the data is thin, say so and lean on the more probable candidate; higher odds always mean a lower chance; no pick is ever guaranteed.
+Reply with a JSON array only, one object per match: [{"key":"<match key>","pick_id":"c1","high_pick_id":"h2","reason":"max 35 words citing the supplied stats","high_reason":"max 25 words","confidence":"Low|Medium|High"}]`;
 
+const cand = (c) => ({ id: c.cid, pick: c.label, group: c.market, probability: +c.p.toFixed(3), fair_odds: c.odds });
 function pickFacts(m) {
   return {
     key: m.key, league: m.league, match: `${m.home} (home) vs ${m.away} (away)`,
     expected_goals: { home: +m.xg.home.toFixed(2), away: +m.xg.away.toFixed(2) },
     elo: m.context.elo, recent_form_points_per_game_last5: m.context.form, head_to_head: m.context.h2h, matches_analysed: m.context.played,
     web_notes: m.notes?.length ? m.notes : undefined,
-    candidates: m.candidates.map((c) => ({ id: c.cid, pick: c.label, group: c.market, probability: +c.p.toFixed(3) })),
+    safe: m.candidates.map(cand), value: (m.high || []).map(cand),
   };
 }
 
-/** items: [{key, league, home, away, xg, context, notes, candidates}] -> [{key, index, reason, confidence}] (valid answers only) */
+/** items: [{key, league, home, away, xg, context, notes, candidates, high}] -> [{key, index, highIndex, reason, highReason, confidence}] (valid answers only) */
 api.choose = async function choose(items) {
   const { text } = await api.generate({ system: PICK_SYSTEM, user: items.map(pickFacts), json: true });
   const arr = parseJson(text, 'array');
@@ -111,7 +114,8 @@ api.choose = async function choose(items) {
     const item = items.find((x) => x.key === o?.key);
     const index = item ? item.candidates.findIndex((c) => c.cid === o.pick_id) : -1;
     if (index < 0) continue; // unknown match or a pick that is not on the list: ignore
-    out.push({ key: item.key, index, reason: clean(o.reason, 300), confidence: ['Low', 'Medium', 'High'].includes(o.confidence) ? o.confidence : 'Medium' });
+    const highIndex = (item.high || []).findIndex((c) => c.cid === o.high_pick_id);
+    out.push({ key: item.key, index, highIndex, reason: clean(o.reason, 300), highReason: clean(o.high_reason, 200), confidence: ['Low', 'Medium', 'High'].includes(o.confidence) ? o.confidence : 'Medium' });
   }
   return out;
 };

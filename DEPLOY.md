@@ -20,7 +20,7 @@ git config --global user.name "Your Name"
 git config --global user.email "you@example.com"
 git init -b main
 git add .
-git commit -m "Sporty Predictor"
+git commit -m "Predictx"
 gh repo create sporty-predictor --public --source=. --push
 ```
 Use a **public** repo: GitHub Actions is free and unlimited there, and no keys are stored in the code.

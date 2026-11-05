@@ -30,9 +30,9 @@ ai.generate = async ({ system, user, search }) => { // fake Gemini: answers in t
   if (/AI football analyst/.test(system)) { calls.analyse++; return { text: JSON.stringify({ summary: 'AI summary', home_strengths: ['a'], home_weaknesses: [], away_strengths: [], away_weaknesses: [], key_insights: ['x 0.5'], uncertainty: 'u' }), sources: [] }; }
   calls.choose++;
   assert(Array.isArray(user) && user.length >= 1 && user.length <= 8, 'batched');
-  assert(user.every((i) => i.candidates.length >= 3 && i.elo && i.key && i.candidates.every((c) => c.id && c.pick)));
+  assert(user.every((i) => i.safe.length >= 3 && i.elo && i.key && i.safe.every((c) => c.id && c.pick && c.fair_odds > 1) && Array.isArray(i.value)));
   // forget the first match of each batch; choose the 2nd candidate for the others
-  return { text: JSON.stringify(user.slice(1).map((i) => ({ key: i.key, pick_id: i.candidates[1].id, reason: 'test reason', confidence: 'Medium' }))), sources: [] };
+  return { text: JSON.stringify(user.slice(1).map((i) => ({ key: i.key, pick_id: i.safe[1].id, high_pick_id: i.value[0]?.id ?? null, high_reason: 'test high', reason: 'test reason', confidence: 'Medium' }))), sources: [] };
 };
 const pipeline = require('./pipeline');
 const accuracy = require('./accuracy');
@@ -43,6 +43,8 @@ const accuracy = require('./accuracy');
   console.log('run 1:', JSON.stringify(r));
   const d = dbm.data();
   const preds = Object.values(d.predictions);
+  assert(preds.some((p) => p.best?.source === 'ai') && preds.some((p) => p.high?.source === 'ai' && p.high.odds > 1.5), 'Gemini main and high-odds picks stored');
+  assert(preds.every((p) => !p.high || (p.high.p < 0.5 && p.high.odds >= 2)), 'high picks pay higher odds');
   assert(preds.length > 0 && calls.choose > 0 && calls.research > 0, 'predictions, research and AI calls happened');
   const web = Object.values(d.matches).filter((m) => m.web);
   assert(web.length === 2 && calls.discover > 0, 'web matches added (invalid and off-list competitions dropped)');

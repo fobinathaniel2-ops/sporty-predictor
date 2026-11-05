@@ -30,7 +30,7 @@ function activeFor(path, to) {
 }
 
 function Logo() {
-  return <A to="/" className="logo"><i><Icon name="ball" size={19} /></i><span>Sporty<b>Predictor</b></span></A>;
+  return <A to="/" className="logo"><i><Icon name="ball" size={19} /></i><span>Predict<b>x</b></span></A>;
 }
 
 function Side({ path }) {
@@ -82,7 +82,7 @@ function Shell() {
         <header className="topbar"><div className="logo-m"><Logo /></div><SearchBox /><Bell /></header>
         <main className="page" key={route.path.join('/')}><Route route={route} /></main>
         <footer className="disc">
-          Sporty Predictor is an analytical tool, not betting advice, and is not affiliated with SportyBet or any bookmaker. It does not take bets. Probabilities are estimates and no pick is guaranteed. Gambling can be addictive: 18+, bet only what you can afford to lose.
+          Predictx is an analytical tool, not betting advice, and is not affiliated with SportyBet or any bookmaker. It does not take bets. Probabilities are estimates and no pick is guaranteed. Gambling can be addictive: 18+, bet only what you can afford to lose.
         </footer>
       </div>
       <nav className="bottom" aria-label="Main">{BOTTOM.map(([to, icon, label]) => <A key={to} to={to} className={activeFor(route.path, to) || (to === '/profile' && route.path[0] === 'settings') ? 'on' : ''}><Icon name={icon} size={22} />{label}</A>)}</nav>

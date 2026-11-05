@@ -274,7 +274,22 @@ function candidates(pm, home, away) {
   const all = Object.entries(pm).map(([id, p]) => ({ id, p }));
   let c = all.filter((x) => x.p >= 0.5 && x.p <= 0.9).sort((a, b) => b.p - a.p);
   if (!c.length) c = all.sort((a, b) => b.p - a.p).slice(0, 3);
-  return c.slice(0, 12).map((x, i) => ({ cid: `c${i + 1}`, id: x.id, market: groupOf(x.id), pick: x.id, label: x.id, p: x.p, about: explain(x.id, home, away) }));
+  return c.slice(0, 12).map((x, i) => ({ cid: `c${i + 1}`, id: x.id, market: groupOf(x.id), pick: x.id, label: x.id, p: x.p, odds: fairOdds(x.p), about: explain(x.id, home, away) }));
+}
+
+/** Higher-odds picks: less likely than the main pick (fair odds roughly 2 to 6), still with a real chance. */
+function highCandidates(pm, home, away) {
+  const all = Object.entries(pm).map(([id, p]) => ({ id, p })).filter((x) => x.p >= 0.17 && x.p < 0.5).sort((a, b) => b.p - a.p);
+  return all.slice(0, 10).map((x, i) => ({ cid: `h${i + 1}`, id: x.id, market: groupOf(x.id), pick: x.id, label: x.id, p: x.p, odds: fairOdds(x.p), about: explain(x.id, home, away) }));
+}
+const fairOdds = (p) => (p > 0 ? +(1 / p).toFixed(2) : null);
+
+/** Statistics fallback for the high-odds pick: the most probable one that still pays at least about 2.0 (fair). */
+function statsHigh(pm, home, away) {
+  const c = highCandidates(pm, home, away);
+  if (!c.length) return null;
+  const { cid, ...x } = c.find((y) => y.p <= 0.42) || c[0];
+  return x;
 }
 
 /** Highest-probability candidate: the pure-statistics pick. */
@@ -353,4 +368,4 @@ function settleId(id, ft, ht, goalSeq) {
 
 const isEarly = (id) => /^[12]UP /.test(id);
 
-module.exports = { livePredict, MODEL_VERSION, seasonOf, buildModel, predict, candidates, statsBest, confidence, settleId, groupOf, explain, isEarly, GROUP_ORDER };
+module.exports = { livePredict, MODEL_VERSION, seasonOf, buildModel, predict, candidates, highCandidates, statsHigh, fairOdds, statsBest, confidence, settleId, groupOf, explain, isEarly, GROUP_ORDER };

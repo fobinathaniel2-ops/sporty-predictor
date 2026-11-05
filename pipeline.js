@@ -167,7 +167,7 @@ function settleAll(now) {
     const m = d.matches[p.matchId];
     if (!m) continue;
     if (m.status === 'FINISHED' && m.ft) {
-      for (const key of ['best', 'statsBest']) if (p[key]) p[key].correct = engine.settleId(p[key].id, m.ft, m.ht);
+      for (const key of ['best', 'statsBest', 'high', 'statsHigh']) if (p[key]) p[key].correct = engine.settleId(p[key].id, m.ft, m.ht);
       p.actual = { ft: m.ft, ht: m.ht || null, result: m.ft[0] > m.ft[1] ? '1' : m.ft[0] === m.ft[1] ? 'X' : '2' };
       p.settled = true; p.settledAt = now.toISOString(); p.locked = true; settled++;
     } else if (m.status === 'OTHER' && now - new Date(m.date) > 3 * DAY) {
@@ -185,7 +185,7 @@ async function resolveEarly(now) {
   const d = dbm.data(); let n = 0;
   for (const p of Object.values(d.predictions)) {
     if (!p.settled || p.void || p.seqTried || n >= 10) continue;
-    const keys = ['best', 'statsBest'].filter((k) => p[k] && engine.isEarly(p[k].id) && p[k].correct === null);
+    const keys = ['best', 'statsBest', 'high', 'statsHigh'].filter((k) => p[k] && engine.isEarly(p[k].id) && p[k].correct === null);
     if (!keys.length) continue;
     const m = d.matches[p.matchId];
     p.seqTried = true; n++;
@@ -212,12 +212,15 @@ function upsertPrediction(m, pr, now) {
   const sb = engine.statsBest(pm, m.home.name, m.away.name);
   let best = { ...sb, source: 'stats', reason: 'Highest probability among the candidate picks, from team statistics.' };
   if (prev?.best?.source === 'ai' && pm[prev.best.id] !== undefined) best = { ...prev.best, p: pm[prev.best.id] }; // keep the AI's choice, refresh its probability
+  const sh = engine.statsHigh(pm, m.home.name, m.away.name);
+  let high = sh ? { ...sh, source: 'stats', reason: 'Most probable pick that still pays higher odds, from team statistics.' } : null;
+  if (prev?.high?.source === 'ai' && pm[prev.high.id] !== undefined) high = { ...prev.high, p: pm[prev.high.id], odds: engine.fairOdds(pm[prev.high.id]) };
   d.predictions[m.id] = {
     matchId: m.id, league: m.league, kickoff: m.date, modelVersion: engine.MODEL_VERSION,
     generatedAt: prev?.generatedAt || now.toISOString(), updatedAt: now.toISOString(),
     pm, lh: pr.lh, la: pr.la, topScores: pr.topScores, context: pr.context,
     confidence: engine.confidence(best.p, pr.context.played),
-    best, statsBest: sb, research: prev?.research, aiTries: prev?.aiTries || 0,
+    best, statsBest: sb, high, statsHigh: sh, research: prev?.research, aiTries: prev?.aiTries || 0,
     locked: false, settled: false, demo: !!d.leagues[m.league]?.demo,
   };
 }
@@ -487,7 +490,7 @@ async function addAiPicks(now) {
     const items = chunk.map((p) => {
       const m = d.matches[p.matchId];
       return { key: p.matchId, league: d.leagues[p.league]?.name || p.league, home: m.home.name, away: m.away.name, xg: { home: p.lh, away: p.la },
-        context: p.context, notes: p.research?.notes, candidates: engine.candidates(p.pm, m.home.name, m.away.name) };
+        context: p.context, notes: p.research?.notes, candidates: engine.candidates(p.pm, m.home.name, m.away.name), high: engine.highCandidates(p.pm, m.home.name, m.away.name) };
     });
     try {
       const answers = await ai.choose(items);
@@ -498,6 +501,8 @@ async function addAiPicks(now) {
         const { cid, ...rest } = c;
         p.best = { ...rest, source: 'ai', reason: a.reason, aiConfidence: a.confidence, model: ai.model() };
         p.confidence = engine.confidence(p.best.p, p.context.played);
+        const h = a.highIndex >= 0 ? it.high[a.highIndex] : null;
+        if (h) { const { cid: _c, ...hr } = h; p.high = { ...hr, source: 'ai', reason: a.highReason || a.reason, model: ai.model() }; }
         got.add(a.key); n++;
       }
       for (const p of chunk) if (!got.has(p.matchId)) p.aiTries = (p.aiTries || 0) + 1;

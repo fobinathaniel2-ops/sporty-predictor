@@ -72,6 +72,11 @@ function compute(d, { includeDemo }) {
     alwaysHomeAccuracy: pct(homeWins, preds.length),
     byMarket: rows(byMarket), byPick: rows(byPick).slice(0, 12), byLeague: rows(byLeague), byConfidence: rows(byConfidence, order), calibration: buckets,
     series: ser, recent,
+    highOdds: (() => { const ok = preds.filter((p) => p.high && typeof p.high.correct === 'boolean'); const c = ok.filter((p) => p.high.correct); const avg = (l) => (l.length ? +(l.reduce((a, p) => a + (p.high.odds || 0), 0) / l.length).toFixed(2) : null);
+      const aiOk = ok.filter((p) => p.high.source === 'ai'); const aiC = aiOk.filter((p) => p.high.correct);
+      // return on a flat 1-unit stake at the model's own fair odds (NOT bookmaker odds), shown only as a sanity check
+      const roi = ok.length ? +(c.reduce((a, p) => a + (p.high.odds || 0), 0) / ok.length - 1).toFixed(3) : null;
+      return { total: ok.length, correct: c.length, accuracy: pct(c.length, ok.length), avgFairOdds: avg(ok), ai: { total: aiOk.length, correct: aiC.length, accuracy: pct(aiC.length, aiOk.length) }, fairOddsReturn: roi }; })(),
     livePicks: side(settled.filter((p) => p.late)), webPicks: side(settled.filter((p) => p.web && !p.late)),
   };
 }

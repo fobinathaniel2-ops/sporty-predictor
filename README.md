@@ -1,4 +1,4 @@
-# Sporty Predictor v6
+# Predictx v7
 
 Online hosting (GitHub + Vercel): see `DEPLOY.md`.
 

@@ -38,7 +38,7 @@ const leagueView = (code) => {
 function predView(p, full) {
   if (!p) return null;
   const o = {
-    best: p.best, statsBest: p.statsBest && { id: p.statsBest.id, label: p.statsBest.label, p: p.statsBest.p, correct: p.statsBest.correct },
+    best: p.best, high: p.high || null, statsBest: p.statsBest && { id: p.statsBest.id, label: p.statsBest.label, p: p.statsBest.p, correct: p.statsBest.correct },
     confidence: p.confidence, locked: p.locked, settled: p.settled, void: !!p.void,
     probs: p.pm['1'] !== undefined && p.pm.X !== undefined ? { home: p.pm['1'], draw: p.pm.X, away: p.pm['2'] } : null, hasNotes: !!p.research?.notes?.length,
     kind: p.late ? 'live' : p.web ? 'web' : 'pre', inplay: p.inplay || null, webNote: p.webNote || null, liveAt: p.liveAt || null,
@@ -466,7 +466,7 @@ const server = http.createServer(handle);
 
 if (require.main === module) {
   server.listen(PORT, () => {
-    console.log(`\nSporty Predictor running at http://localhost:${PORT}`);
+    console.log(`\nPredictx running at http://localhost:${PORT}`);
     console.log(`Football data: ${pipeline.provider() ? pipeline.provider().name : 'NOT CONFIGURED - set FOOTBALL_DATA_KEY'}`);
     console.log(`Competitions:  ${pipeline.provider() ? (process.env.LEAGUES || 'all 12 free-plan competitions') : '-'}`);
     console.log(`Gemini:        ${ai.enabled() ? 'ON (' + ai.model() + '): picks, web research, news, AI analysis' : 'OFF - set GEMINI_API_KEY (statistical picks are used meanwhile)'}\n`);
