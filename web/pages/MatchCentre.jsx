@@ -45,7 +45,7 @@ function PickBanner({ p }) {
     <div className="card glow row" style={{ gap: 14, marginTop: 14 }}>
       <Ring value={b.p} size={70} color={early ? 'var(--violet)' : 'var(--g)'} />
       <div className="grow">
-        <div className="row wrap" style={{ gap: 6, marginBottom: 6 }}>{p.kind === 'live' && <Tag kind="Low">LIVE PICK</Tag>}{p.kind === 'web' && <Tag>Found on the web</Tag>}{b.source === 'ai' ? <Tag kind="ai">✦ Gemini {b.estimated ? 'estimate' : 'pick'}</Tag> : <Tag>Stats pick</Tag>}<Tag kind={p.confidence}>{p.confidence} confidence</Tag>
+        <div className="row wrap" style={{ gap: 6, marginBottom: 6 }}>{p.kind === 'live' && <Tag kind="Low">LIVE PICK</Tag>}{p.kind === 'esports' && <Tag kind="Low">eFootball esports</Tag>}{p.kind === 'web' && <Tag>Found on the web</Tag>}{b.source === 'ai' ? <Tag kind="ai">✦ Gemini {b.estimated ? 'estimate' : 'pick'}</Tag> : <Tag>Stats pick</Tag>}<Tag kind={p.confidence}>{p.confidence} confidence</Tag>
           {p.settled && (b.correct === true ? <Tag kind="ok">✓ Correct</Tag> : b.correct === false ? <Tag kind="bad">✗ Wrong</Tag> : <Tag>Not verifiable</Tag>)}{p.locked && !p.settled && <Tag>Locked</Tag>}</div>
         <PickName best={b} size={20} />
         <p className="sm muted" style={{ marginTop: 6 }}>{b.about}</p>
@@ -80,7 +80,7 @@ function Summary({ d }) {
         <h3 style={{ marginBottom: 10 }}>{p.kind === 'live' ? 'Result probabilities now' : 'Result probabilities'}</h3>
         {p.probs ? <ProbBars home={m.home.name} away={m.away.name} probs={p.probs} /> : <p className="muted sm">No result model for this match.</p>}
         {p.kind === 'live' && <p className="xs dim" style={{ margin: '8px 0 0' }}>Picked in play at {p.liveAt?.minute}' with the score {p.liveAt?.score?.[0]}-{p.liveAt?.score?.[1]}. Live picks are updated every few minutes and are not counted in the main accuracy figure.</p>}
-        {p.kind === 'web' && <p className="xs dim" style={{ margin: '8px 0 0' }}>{p.webNote}</p>}
+        {(p.kind === 'web' || p.kind === 'esports') && <p className="xs dim" style={{ margin: '8px 0 0' }}>{p.webNote}</p>}
         {p.inplay && <div className="note info" style={{ marginTop: 10 }}>Live outlook at {p.inplay.minute}' ({p.inplay.score[0]}-{p.inplay.score[1]}): <b>{p.inplay.best.label}</b> · {pct(p.inplay.best.p)} <span className="xs">· {p.inplay.best.about}</span></div>}
         <div className="row wrap" style={{ marginTop: 12, gap: 8 }}>
           {p.xg?.home != null && <span className="tag">{p.kind === 'live' ? 'xG left' : 'xG'} {num(p.xg.home, 2)} – {num(p.xg.away, 2)}</span>}

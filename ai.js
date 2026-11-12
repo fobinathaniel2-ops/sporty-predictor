@@ -224,6 +224,60 @@ api.results = async function results(items) {
   return out;
 };
 
+/* ------------------------------------------------------------------------------- eFootball / EsportsBattle ----------- */
+
+const discoverEsportsSystem = (names) => `You find upcoming eFootball esports matches (EsportsBattle, virtual football played by real gamers) with Google Search. Look at the EsportsBattle schedule and other public esports schedules. List matches in the time range given from these competitions, writing the competition field exactly as spelled here: ${names.join('; ')}. Also include any other eFootball / EsportsBattle competition you find, named "EsportsBattle - <name>".
+Rules: only list matches the search results actually show; never invent teams, players or times; write each side as shown, for example "Barcelona (Nikolay)" (club and the gamer in brackets when the source gives the gamer); kickoff must be an ISO 8601 UTC timestamp (convert local times); skip matches whose time you cannot find; at most 30 matches, the soonest first.
+Reply with a JSON array only: [{"home":"...","away":"...","competition":"...","kickoff":"2026-01-31T15:00:00Z"}]`;
+
+api.discoverEsports = async function discoverEsports(from, to, names = require('./competitions').ESPORTS) {
+  const { text, sources } = await api.generate({ system: discoverEsportsSystem(names), user: { from, to }, search: true, maxTokens: 6000, timeoutMs: 120000 });
+  const arr = parseJson(text, 'array');
+  const matches = [];
+  for (const o of Array.isArray(arr) ? arr : []) {
+    const home = clean(o?.home, 70), away = clean(o?.away, 70), competition = clean(o?.competition, 70), t = new Date(o?.kickoff);
+    if (!home || !away || !competition || home.toLowerCase() === away.toLowerCase() || isNaN(t)) continue;
+    matches.push({ home, away, competition, country: 'eSports', kickoff: t.toISOString() });
+  }
+  return { matches: matches.slice(0, 40), sources };
+};
+
+const ES_MARKETS = ['1', 'X', '2', '1X', 'X2', '12', 'DNB 1', 'DNB 2', 'Over 3.5', 'Over 4.5', 'Over 5.5', 'Under 4.5', 'Under 5.5', 'Under 6.5', 'BTTS Yes', 'BTTS No', 'Home Over 1.5', 'Away Over 1.5'];
+const ESPICK_SYSTEM = `You are a careful analyst of eFootball esports (EsportsBattle: virtual football, 2 halves of 4 or 6 minutes, played by real gamers who control the club). Each side is a club played by a named gamer. The gamer's recent form matters far more than the real-life club. For each match in the JSON array, search for the two gamers' recent results, goals scored and conceded per match, head-to-head and the tournament's average goals, then choose TWO picks from this fixed list: ${ES_MARKETS.join(', ')}. (1 = home win, X = draw, 2 = away win, 1X / X2 / 12 = double chance, DNB = draw no bet, BTTS = both score.) "pick" is the one most likely to win. "high_pick" is a higher-odds pick you still find supported, or null.
+Rules: base the picks only on what you actually find; give honest probability estimates (0.20 to 0.95); never invent results; esports results are very random, so say so when the data is thin and prefer a safer market; no pick is guaranteed.
+Reply with a JSON array only: [{"key":"<match key>","pick":"Over 4.5","probability":0.7,"high_pick":"1","high_probability":0.4,"confidence":"Low|Medium","reason":"max 35 words citing what you found"}]`;
+
+api.pickEsports = async function pickEsports(items) {
+  const { text, sources } = await api.generate({ system: ESPICK_SYSTEM, user: items, search: true, maxTokens: 4096, timeoutMs: 120000 });
+  const arr = parseJson(text, 'array');
+  const out = [];
+  for (const o of Array.isArray(arr) ? arr : []) {
+    const pick = clean(o?.pick, 20), p = Number(o?.probability);
+    if (!items.some((x) => x.key === o?.key) || !ES_MARKETS.includes(pick) || !(p >= 0.2 && p <= 0.95)) continue;
+    const hp = clean(o?.high_pick, 20), hpp = Number(o?.high_probability);
+    const high = ES_MARKETS.includes(hp) && hp !== pick && hpp >= 0.15 && hpp < 0.6 ? { pick: hp, p: Math.round(hpp * 100) / 100 } : null;
+    out.push({ key: o.key, pick, p: Math.round(p * 100) / 100, high, confidence: o.confidence === 'Medium' ? 'Medium' : 'Low', reason: clean(o.reason, 300) });
+  }
+  return { picks: out, sources };
+};
+
+const ES_RESULTS_SYSTEM = `You look up final scores of eFootball esports matches (EsportsBattle, virtual football played by gamers) with Google Search. For each match in the JSON array, find the final full-time score of the match (2 halves; include any golden-goal/extra time only if the source counts it in the final score) and the half-time score if shown.
+Rules: only report a score if a reliable source shows the match has finished; otherwise set finished to false; never guess.
+Reply with a JSON array only: [{"key":"<match key>","finished":true,"home_goals":3,"away_goals":2,"ht_home":1,"ht_away":1}] (ht_* may be null)`;
+
+api.resultsEsports = async function resultsEsports(items) {
+  const { text } = await api.generate({ system: ES_RESULTS_SYSTEM, user: items, search: true, maxTokens: 3000, timeoutMs: 90000 });
+  const arr = parseJson(text, 'array');
+  const ok = (n) => Number.isInteger(n) && n >= 0 && n <= 20;
+  const out = [];
+  for (const o of Array.isArray(arr) ? arr : []) {
+    if (!items.some((x) => x.key === o?.key) || o.finished !== true || !ok(o.home_goals) || !ok(o.away_goals)) continue;
+    const ht = ok(o.ht_home) && ok(o.ht_away) && o.ht_home <= o.home_goals && o.ht_away <= o.away_goals ? [o.ht_home, o.ht_away] : null;
+    out.push({ key: o.key, ft: [o.home_goals, o.away_goals], ht });
+  }
+  return out;
+};
+
 api.WEB_MARKETS = WEB_MARKETS;
 
 api.enabled = enabled;

@@ -20,6 +20,7 @@ export function PickLine({ p }) {
       <span className="xs muted num">{pct(b.p)}{b.p > 0 ? ` · fair ${(1 / b.p).toFixed(2)}` : ''}</span>
       {p.kind === 'live' && <Tag kind="Low">LIVE PICK</Tag>}
       {p.kind === 'web' && <Tag>WEB</Tag>}
+      {p.kind === 'esports' && <Tag kind="Low">ESPORTS</Tag>}
       {b.source === 'ai' && <Tag kind="ai">✦ Gemini{b.estimated ? ' est.' : ''}</Tag>}
       {p.settled ? mark(b.correct) : <Tag kind={p.confidence}>{p.confidence}</Tag>}
       {p.high && <span className="xs" style={{ flexBasis: '100%' }}>💰 High odds: <b>{p.high.label}</b> <span className="muted num">{pct(p.high.p)} · fair {(p.high.odds || 1 / p.high.p).toFixed(2)}</span> {p.settled ? mark(p.high.correct) : null}</span>}

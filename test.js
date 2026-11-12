@@ -15,6 +15,19 @@ ai.generate = async ({ system, user, search }) => { // fake Gemini: answers in t
     calls.research++; assert(search === true, 'research must use web search');
     return { text: JSON.stringify(user.map((i, n) => ({ key: i.key, notes: n === 0 ? [] : [`${i.home}: test injury note`] }))), sources: [{ title: 'Test source', uri: 'https://example.com/a' }] };
   }
+  if (/upcoming eFootball esports matches/.test(system)) {
+    calls.esDiscover = (calls.esDiscover || 0) + 1; assert(search === true);
+    const k = (m) => new Date(Date.now() + m * 60000).toISOString();
+    return { text: JSON.stringify([{ home: 'Barcelona (Nikolay)', away: 'Real Madrid (Pavel)', competition: 'EsportsBattle - Champions League B', kickoff: k(30) },
+      { home: 'Arsenal (Ivan)', away: 'Chelsea (Oleg)', competition: 'eFootball Some New Cup', kickoff: k(50) },
+      { home: 'Same (A)', away: 'Same (A)', competition: 'EsportsBattle - CSL', kickoff: k(60) },
+      { home: 'Real Team', away: 'Other Team', competition: 'Premier League', kickoff: k(70) }]), sources: [] };
+  }
+  if (/analyst of eFootball esports/.test(system)) {
+    calls.esPick = (calls.esPick || 0) + 1;
+    return { text: JSON.stringify(user.map((i) => ({ key: i.key, pick: 'Over 4.5', probability: 0.7, high_pick: '1', high_probability: 0.4, confidence: 'Low', reason: 'gamer form' }))), sources: [] };
+  }
+  if (/scores of eFootball esports matches/.test(system)) { calls.esResults = (calls.esResults || 0) + 1; return { text: JSON.stringify(user.map((i) => ({ key: i.key, finished: true, home_goals: 4, away_goals: 2, ht_home: 2, ht_away: 1 }))), sources: [] }; }
   if (/find real upcoming football fixtures/.test(system)) {
     calls.discover++; assert(search === true, 'discovery must use web search');
     const names = Object.values(dbm.data().teams).filter((t) => !String(t.id).startsWith('w_')).map((t) => t.name);
@@ -46,7 +59,10 @@ const accuracy = require('./accuracy');
   assert(preds.some((p) => p.best?.source === 'ai') && preds.some((p) => p.high?.source === 'ai' && p.high.odds > 1.5), 'Gemini main and high-odds picks stored');
   assert(preds.every((p) => !p.high || (p.high.p < 0.5 && p.high.odds >= 2)), 'high picks pay higher odds');
   assert(preds.length > 0 && calls.choose > 0 && calls.research > 0, 'predictions, research and AI calls happened');
-  const web = Object.values(d.matches).filter((m) => m.web);
+  const es = Object.values(d.matches).filter((m) => m.esports);
+  assert(es.length === 2 && es.every((m) => d.predictions[m.id]?.esports && d.predictions[m.id].best.id === 'Over 4.5' && d.predictions[m.id].high?.id === '1'), 'eFootball matches found and predicted (bad rows dropped)');
+  assert(Object.values(d.leagues).filter((l) => l.esports).length === 2 && es.every((m) => !String(m.home.id).match(/^\d/)), 'eFootball competitions registered, own teams');
+  const web = Object.values(d.matches).filter((m) => m.web && !m.esports);
   assert(web.length === 2 && calls.discover > 0, 'web matches added (invalid and off-list competitions dropped)');
   assert(web.every((m) => d.predictions[m.id]?.web), 'every web match has a pick');
   const wp = web.map((m) => d.predictions[m.id]);
@@ -75,6 +91,8 @@ const accuracy = require('./accuracy');
   }
   const acc = accuracy.compute(d, { includeDemo: true });
   console.log('accuracy:', JSON.stringify({ verified: acc.matchesVerified, best: acc.best, ai: acc.ai, statsSame: acc.statsOnAiMatches }));
+  assert(acc.esportsPicks.total === 2 && acc.esportsPicks.correct === 2 && acc.highOdds.total >= 0, 'eFootball picks settled from web scores and counted separately (Over 4.5 on 4-2)');
+  assert(Object.values(dbm.data().predictions).filter((p) => p.esports).every((p) => p.high.correct === true && p.best.correct === true), 'esports main and high picks settled');
   assert(acc.best.total > 0 && acc.byMarket.length > 0 && acc.byPick.length > 0);
 
   // 1UP / 2UP: the goal timeline settles them exactly
@@ -105,9 +123,10 @@ const accuracy = require('./accuracy');
   const dash = (await get(`/api/dashboard?${win(1)}`)).body;
   assert(Array.isArray(dash.live) && Array.isArray(dash.today) && dash.recent.length > 0 && Array.isArray(dash.featured));
   const lv = (await get('/api/live')).body; assert(Array.isArray(lv));
-  const leagues = (await get('/api/leagues')).body; assert(leagues.filter((l) => l.code === 'DEMO')[0].teams === 12 && leagues.length === 3, 'demo league plus two web competitions');
-  const wl = leagues.find((l) => l.code.startsWith('WEB_')); assert((await get(`/api/league/${wl.code}`)).status === 200 && (await get(`/api/stats/${wl.code}`)).status === 200, 'web competition pages work');
-  const wm = Object.values(dbm.data().matches).find((m) => m.web); const wd = (await get(`/api/match/${wm.id}`)); assert(wd.status === 200 && wd.body.match.prediction.kind === 'web', 'web match centre');
+  const leagues = (await get('/api/leagues')).body; assert(leagues.filter((l) => l.code === 'DEMO')[0].teams === 12 && leagues.length === 5 && leagues.filter((l) => l.kind === 'esports').length === 2, 'demo league, two web competitions, two eFootball ones');
+  const wl = leagues.find((l) => l.code.startsWith('WEB_'));
+  const el = leagues.find((l) => l.code.startsWith('ES_')); assert((await get(`/api/league/${el.code}`)).status === 200, 'eFootball competition page works'); assert((await get(`/api/league/${wl.code}`)).status === 200 && (await get(`/api/stats/${wl.code}`)).status === 200, 'web competition pages work');
+  const wm = Object.values(dbm.data().matches).find((m) => m.web && !m.esports); const wd = (await get(`/api/match/${wm.id}`)); assert(wd.status === 200 && wd.body.match.prediction.kind === 'web', 'web match centre');
   assert((await get(`/api/analysis/${wm.id}`)).status === 200, 'analysis works without xG');
   assert((await get(`/api/team/${wm.home.id}`)).status === 200, 'web team page works');
   const lg = (await get('/api/league/DEMO')).body;

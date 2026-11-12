@@ -326,6 +326,8 @@ function settleId(id, ft, ht, goalSeq) {
     if (own < k) return false; // cannot lead by k without scoring k
     return null;
   };
+  const og = /^(Over|Under) (\d+)\.5$/.exec(id);
+  if (og) return og[1] === 'Over' ? t > +og[2] : t <= +og[2];
   switch (id) {
     case '1': case 'X': case '2': return id === res;
     case '1X': return res !== '2';

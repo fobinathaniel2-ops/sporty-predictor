@@ -46,8 +46,9 @@ function Record() {
           {a.highOdds?.total > 0 && <div className="tile"><div className="v">{acc(a.highOdds.accuracy)}</div><div className="l">High-odds picks ({a.highOdds.correct}/{a.highOdds.total}) · average fair odds {a.highOdds.avgFairOdds}. Higher odds win less often; fair odds are the model's own estimate, not bookmaker odds.</div></div>}
           {a.ai.total > 0 && a.statsOnAiMatches.total > 0 && <Note info>On the same {a.statsOnAiMatches.total} matches, the plain statistics pick would have scored {acc(a.statsOnAiMatches.accuracy)} against Gemini's {acc(a.ai.accuracy)}.</Note>}
           {a.best.total < 30 && <Note>Only {a.best.total} verified picks so far, which is too few to tell skill from luck. Treat these numbers as early signs, not a result.</Note>}
-          {(a.livePicks.total > 0 || a.webPicks.total > 0) && <div className="grid g2">
+          {(a.livePicks.total > 0 || a.webPicks.total > 0 || a.esportsPicks?.total > 0) && <div className="grid g2">
             {a.livePicks.total > 0 && <div className="tile"><div className="v">{acc(a.livePicks.accuracy)}</div><div className="l">In-play picks ({a.livePicks.correct}/{a.livePicks.total}) · made after kick-off, counted separately</div></div>}
+            {a.esportsPicks?.total > 0 && <div className="tile"><div className="v">{acc(a.esportsPicks.accuracy)}</div><div className="l">eFootball esports ({a.esportsPicks.correct}/{a.esportsPicks.total}) · estimated from gamers' form, counted separately</div></div>}
             {a.webPicks.total > 0 && <div className="tile"><div className="v">{acc(a.webPicks.accuracy)}</div><div className="l">Web-found matches ({a.webPicks.correct}/{a.webPicks.total}) · scores found by web search, counted separately</div></div>}
           </div>}
           <div className="card">
@@ -75,6 +76,7 @@ function HowItWorks() {
     ['Statistics', 'Attack, defence, form, head-to-head and Elo ratings are worked out for each team.'],
     ['Probabilities', 'A Poisson goal model turns them into a chance for every market, including early payout (1UP / 2UP).'],
     ['Gemini', status?.ai?.enabled ? 'Gemini makes the predictions: it searches the web for team news, reads our statistics, then chooses a main pick (best chance) and a high-odds pick from our list. It cannot invent a pick. If Gemini is unavailable, the statistics pick is used. Odds shown are fair odds (1 ÷ probability), not bookmaker odds.' : 'Add a Gemini key and it will search the web for team news and choose one pick from the best-rated options.'],
+    ['eFootball', 'Gemini searches the EsportsBattle schedules (and other eFootball competitions), estimates each pick from the two gamers\' recent form, and later looks up the score to check it. Esports results are very random, they are counted separately, and the percentages are Gemini\'s own estimates.'],
     ['Web finds', status?.ai?.enabled ? 'Gemini also searches the web for top-league and cup matches missing from the data feed, and picks for them. Those percentages are its own estimates, so they are marked WEB.' : 'With a Gemini key it also searches the web for extra top-league and cup matches and picks for them.'],
     ['Live', 'Matches in play get a pick that uses the current score and the minutes left. These are marked LIVE PICK and counted separately.'],
     ['Locked & checked', 'A pick is saved before kick-off and cannot change. After full time it is marked right or wrong from the real result.'],

@@ -26,10 +26,10 @@ export function LeaguesPage() {
       <p className="muted" style={{ marginBottom: 6 }}>Standings, fixtures, results, top scorers and team statistics.</p>
       <Async q={q} skeleton={<SkelCards n={4} h={90} />}>{(ls) => {
         const sorted = [...ls].sort((x, y) => (x.order ?? 999) - (y.order ?? 999));
-        const lg = sorted.filter((l) => l.kind !== 'cup'), cups = sorted.filter((l) => l.kind === 'cup');
+        const lg = sorted.filter((l) => l.kind === 'league'), cups = sorted.filter((l) => l.kind === 'cup'), es = sorted.filter((l) => l.kind === 'esports');
         const block = (title, list, icon) => list.length ? <Section title={title} icon={icon}><div className="grid g3">{list.map((l) => <LeagueCard key={l.code} l={l} />)}</div></Section> : null;
-        return ls.length ? <>{block('Leagues', lg, 'trophy')}{block('Cups & international', cups, 'ball')}
-          <div style={{ marginTop: 22 }}><Note info>Only the competitions on your list are covered. Those missing from the football-data.org feed (most cups and African, Asian and American leagues) show up once Gemini finds their matches on the web, and have no standings or player stats.</Note></div></> :
+        return ls.length ? <>{block('Leagues', lg, 'trophy')}{block('Cups & international', cups, 'ball')}{block('eFootball esports (virtual football played by gamers)', es, 'bolt')}
+          <div style={{ marginTop: 22 }}><Note info>Only the competitions on your list are covered. Gemini searches the web alongside the football-data.org feed: competitions missing from the feed (most cups and African, Asian and American leagues) appear once Gemini finds their matches, with no standings or player stats. eFootball esports matches are found the same way.</Note></div></> :
           <div style={{ marginTop: 16 }}><Empty icon="trophy" title="No competitions loaded yet">The first data update may still be running.</Empty></div>;
       }}</Async>
     </div>

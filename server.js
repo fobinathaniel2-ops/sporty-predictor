@@ -32,7 +32,7 @@ const teamView = (t) => ({ id: t.id, name: t.name, crest: crestOf(t) });
 const KIND_CUP = /Cup|Pokal|Copa|Coppa|Coupe|UEFA|FIFA|CAF |AFC |CONCACAF|Nations|Champions League|Libertadores|Sudamericana|AFCON|Euro/;
 const leagueView = (code) => {
   const l = d().leagues[code]; const name = l?.name || code; const i = comps.NAMES.indexOf(name);
-  return { code, name, country: l?.country || '', emblem: l?.emblem || null, demo: !!l?.demo, web: !!l?.web, order: i < 0 ? 999 : i, kind: KIND_CUP.test(name) && !/Premier League|Pro League|Primeira|Premiership/.test(name) ? 'cup' : 'league' };
+  return { code, name, country: l?.country || '', emblem: l?.emblem || null, demo: !!l?.demo, web: !!l?.web, order: i < 0 ? 999 : i, kind: l?.esports ? 'esports' : KIND_CUP.test(name) && !/Premier League|Pro League|Primeira|Premiership/.test(name) ? 'cup' : 'league' };
 };
 
 function predView(p, full) {
@@ -41,7 +41,7 @@ function predView(p, full) {
     best: p.best, high: p.high || null, statsBest: p.statsBest && { id: p.statsBest.id, label: p.statsBest.label, p: p.statsBest.p, correct: p.statsBest.correct },
     confidence: p.confidence, locked: p.locked, settled: p.settled, void: !!p.void,
     probs: p.pm['1'] !== undefined && p.pm.X !== undefined ? { home: p.pm['1'], draw: p.pm.X, away: p.pm['2'] } : null, hasNotes: !!p.research?.notes?.length,
-    kind: p.late ? 'live' : p.web ? 'web' : 'pre', inplay: p.inplay || null, webNote: p.webNote || null, liveAt: p.liveAt || null,
+    kind: p.late ? 'live' : p.esports ? 'esports' : p.web ? 'web' : 'pre', inplay: p.inplay || null, webNote: p.webNote || null, liveAt: p.liveAt || null,
   };
   if (full) {
     Object.assign(o, { xg: { home: p.lh, away: p.la }, topScores: p.topScores, context: p.context, generatedAt: p.generatedAt, modelVersion: p.modelVersion, research: p.research || null, actual: p.actual || null });

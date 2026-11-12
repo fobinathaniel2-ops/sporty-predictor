@@ -15,7 +15,7 @@ function periodKey(iso, kind) {
 
 function compute(d, { includeDemo }) {
   const settled = Object.values(d.predictions).filter((p) => p.settled && !p.void && p.actual && (includeDemo || !d.leagues[p.league]?.demo));
-  const preds = settled.filter((p) => !p.late && !p.web);
+  const preds = settled.filter((p) => !p.late && !p.web && !p.esports);
   const side = (list) => { const ok = list.filter((p) => p.best && typeof p.best.correct === 'boolean'); const c = ok.filter((p) => p.best.correct).length; return { total: ok.length, correct: c, accuracy: pct(c, ok.length) }; };
   const tally = () => ({ total: 0, correct: 0 });
   const add = (map, key, ok) => { const t = map[key] || (map[key] = tally()); t.total++; if (ok) t.correct++; };
@@ -77,7 +77,7 @@ function compute(d, { includeDemo }) {
       // return on a flat 1-unit stake at the model's own fair odds (NOT bookmaker odds), shown only as a sanity check
       const roi = ok.length ? +(c.reduce((a, p) => a + (p.high.odds || 0), 0) / ok.length - 1).toFixed(3) : null;
       return { total: ok.length, correct: c.length, accuracy: pct(c.length, ok.length), avgFairOdds: avg(ok), ai: { total: aiOk.length, correct: aiC.length, accuracy: pct(aiC.length, aiOk.length) }, fairOddsReturn: roi }; })(),
-    livePicks: side(settled.filter((p) => p.late)), webPicks: side(settled.filter((p) => p.web && !p.late)),
+    livePicks: side(settled.filter((p) => p.late)), webPicks: side(settled.filter((p) => p.web && !p.late && !p.esports)), esportsPicks: side(settled.filter((p) => p.esports)),
   };
 }
 

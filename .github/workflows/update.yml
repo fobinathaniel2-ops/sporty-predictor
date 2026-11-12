@@ -38,3 +38,4 @@ jobs:
           call data "$LOOPS"
           call ai 3
           call web 6
+          call esports 1

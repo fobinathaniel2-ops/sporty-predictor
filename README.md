@@ -17,7 +17,7 @@ Football analytics: live scores, match centre, league tables, team profiles, sta
 Open http://localhost:3000 in the phone browser (add to home screen to install it). No `npm install` is needed.
 
 ## Options (environment variables)
-Competitions are fixed to the list in `competitions.js`. LEAGUES (e.g. PL,PD,CL or ALL, limited to that list) · PIPELINE_HOURS · HORIZON_DAYS (days ahead to pick, default 28) · GEMINI_MODEL · AI_SEARCH=0 · AI_WEB=0 (turn off web match discovery) · AI_WEB_DAYS (default 4) · AI_WEB_MAX (picks per run, default 24) · AI_DAILY_CAP · PORT · DATA_DIR · LIVE_POLL_SEC · DEMO_MODE=1 (simulated data, for testing only)
+Competitions are fixed to the list in `competitions.js`. LEAGUES (e.g. PL,PD,CL or ALL, limited to that list) · PIPELINE_HOURS · HORIZON_DAYS (days ahead to pick, default 28) · GEMINI_MODEL · AI_SEARCH=0 · AI_WEB=0 (turn off web match discovery) · AI_WEB_DAYS (default 4) · AI_WEB_MAX (picks per run, default 24) · AI_ESPORTS=0 (turn off eFootball) · AI_ES_HOURS (default 8) · AI_ES_PICKS (per run, default 12) · AI_DAILY_CAP · PORT · DATA_DIR · LIVE_POLL_SEC · DEMO_MODE=1 (simulated data, for testing only)
 
 ## Notes
 - Picks are saved before kick-off and never changed. Accuracy counts only picks verified against real results.
