@@ -362,7 +362,7 @@ async function addWebMatches(now) {
         const key = [normName(hn), normName(an)].sort().join('|');
         const dup = Object.values(d.matches).some((m) => Math.abs(new Date(m.date) - t) < 36 * HOUR && [normName(m.home.name), normName(m.away.name)].sort().join('|') === key);
         if (dup) continue;
-        const code = `WEB_${slug(canon.name).slice(0, 36).replace(/-/g, '_')}`;
+        const code = comps.webCode(canon.name);
         d.leagues[code] = { ...(d.leagues[code] || {}), code, name: x.competition, country: x.country || 'Web', emblem: null, web: true };
         const id = 'web_' + require('crypto').createHash('md5').update(`${code}|${key}|${x.kickoff.slice(0, 10)}`).digest('hex').slice(0, 10);
         const side = (k, n) => (k ? { id: k.id, name: k.name, crest: k.crest || null } : { id: `w_${slug(n).replace(/-/g, '_')}`, name: n, crest: null });
@@ -475,7 +475,7 @@ async function addEsportsMatches(now) {
       const t = new Date(x.kickoff);
       if (t <= now || t - now > (hours + 1) * HOUR) continue;
       const canon = comps.esportsCanonical(x.competition); if (!canon) continue;
-      const code = `ES_${slug(canon.name).slice(0, 40).replace(/-/g, '_')}`;
+      const code = comps.esCode(canon.name);
       d.leagues[code] = { ...(d.leagues[code] || {}), code, name: canon.name, country: 'eSports', emblem: null, web: true, esports: true };
       const id = 'es_' + require('crypto').createHash('md5').update(`${code}|${normName(x.home)}|${normName(x.away)}|${x.kickoff.slice(0, 16)}`).digest('hex').slice(0, 10);
       const side = (n) => ({ id: `e_${slug(n).replace(/-/g, '_')}`, name: n, crest: null });

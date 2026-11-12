@@ -123,6 +123,7 @@ const accuracy = require('./accuracy');
   const dash = (await get(`/api/dashboard?${win(1)}`)).body;
   assert(Array.isArray(dash.live) && Array.isArray(dash.today) && dash.recent.length > 0 && Array.isArray(dash.featured));
   const lv = (await get('/api/live')).body; assert(Array.isArray(lv));
+  const st0 = (await get('/api/status')).body; assert(st0.competitions.length >= 54 && st0.competitions.some((c) => c.code === 'ES_esportsbattle_csl' && c.kind === 'esports' && c.matches === 0) && st0.competitions.some((c) => /^WEB_/.test(c.code)), 'filter lists every competition'); assert.strictEqual((await get('/api/fixtures?from=2026-01-01&to=2026-01-08&league=ES_esportsbattle_csl')).status, 200);
   const leagues = (await get('/api/leagues')).body; assert(leagues.filter((l) => l.code === 'DEMO')[0].teams === 12 && leagues.length === 5 && leagues.filter((l) => l.kind === 'esports').length === 2, 'demo league, two web competitions, two eFootball ones');
   const wl = leagues.find((l) => l.code.startsWith('WEB_'));
   const el = leagues.find((l) => l.code.startsWith('ES_')); assert((await get(`/api/league/${el.code}`)).status === 200, 'eFootball competition page works'); assert((await get(`/api/league/${wl.code}`)).status === 200 && (await get(`/api/stats/${wl.code}`)).status === 200, 'web competition pages work');

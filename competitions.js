@@ -77,9 +77,14 @@ function esportsCanonical(name) {
   return { name: `EsportsBattle - ${tail || 'Other'}`, esports: true };
 }
 
+const slug = (x) => String(x).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+/** The league code a competition gets when its matches are found by web search. */
+const webCode = (name) => `WEB_${slug(name).slice(0, 36).replace(/-/g, '_')}`;
+const esCode = (name) => `ES_${slug(name).slice(0, 40).replace(/-/g, '_')}`;
+
 const NAMES = LIST.map((c) => c.name);
 const CODES = LIST.filter((c) => c.code).map((c) => c.code);
 const FREE_CODES = ['PL', 'ELC', 'PD', 'SA', 'BL1', 'FL1', 'DED', 'PPL', 'BSA', 'CL', 'EC', 'WC'];
 const byCode = (code) => LIST.find((c) => c.code === code) || null;
 
-module.exports = { ESPORTS, esportsCanonical, LIST, NAMES, CODES, FREE_CODES, canonical, byCode };
+module.exports = { webCode, esCode, ESPORTS, esportsCanonical, LIST, NAMES, CODES, FREE_CODES, canonical, byCode };

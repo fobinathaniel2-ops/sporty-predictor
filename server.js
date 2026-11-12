@@ -78,6 +78,14 @@ function limit(req, key, max, windowMs) {
 const routes = [];
 const route = (method, re, fn) => routes.push({ method, re, fn });
 
+/** Every competition on the list (feed, web-found and eFootball), even those with no matches yet, so the filters always show them. */
+function competitionList() {
+  const dd = d(); const have = new Map(); const out = [];
+  for (const c of active()) if (dd.leagues[c]) { const v = leagueView(c); have.set(v.name, true); out.push({ ...v, matches: Object.values(dd.matches).filter((m) => m.league === c).length }); }
+  comps.LIST.forEach((c, i) => { if (!have.has(c.name)) out.push({ code: comps.webCode(c.name), name: c.name, country: '', emblem: null, demo: false, web: true, order: i, kind: KIND_CUP.test(c.name) && !/Premier League|Pro League|Primeira|Premiership/.test(c.name) ? 'cup' : 'league', matches: 0 }); });
+  comps.ESPORTS.forEach((n, i) => { if (!have.has(n)) out.push({ code: comps.esCode(n), name: n, country: 'eSports', emblem: null, demo: false, web: true, order: 1000 + i, kind: 'esports', matches: 0 }); });
+  return out.map((x) => (x.kind === 'esports' && x.order < 1000 ? { ...x, order: 1000 + x.order } : x)).sort((a, b) => a.order - b.order);
+}
 route('GET', /^\/api\/status$/, () => {
   const dd = d(); const codes = active(); const st = pipeline.state(); const prov = pipeline.provider();
   const live = Object.values(dd.matches).filter((m) => m.status === 'LIVE' && codes.includes(m.league)).length;
@@ -85,6 +93,7 @@ route('GET', /^\/api\/status$/, () => {
     configured: !!prov, provider: prov?.name || null, demo: pipeline.isDemo(),
     ai: { enabled: ai.enabled(), provider: 'Gemini', model: ai.enabled() ? ai.model() : null, usage: ai.enabled() ? ai.usage() : null },
     leagues: codes.filter((c) => dd.leagues[c]).map((c) => leagueView(c)).sort((a, b) => a.order - b.order),
+    competitions: competitionList(),
     lastRun: dd.meta.lastRun || null, running: st.running, nextRunAt: st.nextRunAt,
     counts: {
       live, upcoming: Object.values(dd.matches).filter((m) => m.status === 'SCHEDULED' && codes.includes(m.league)).length,

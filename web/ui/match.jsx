@@ -127,7 +127,7 @@ export function FixtureBrowser({ filter, extra, sortable = false, emptyText, fil
   const shown = list.filter((m) => inDay(m) && inLeague(m));
   const move = (n) => { const o = offset + n; setOffset(o); setSel(o === 0 ? dayKey(today) : 'week'); };
   const fmt = (d) => d.toLocaleDateString([], { day: 'numeric', month: 'short' });
-  const leagueName = league ? (status?.leagues.find((l) => l.code === league)?.name || league) : 'All competitions';
+  const leagueName = league ? ((status?.competitions || status?.leagues || []).find((l) => l.code === league)?.name || league) : 'All competitions';
   const dayName = sel === 'week' ? `${fmt(days[0])} – ${fmt(days[6])}` : sel === dayKey(today) ? 'Today' : new Date(sel + 'T12:00:00').toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'short' });
   const activeCount = (league ? 1 : 0) + (sel !== dayKey(today) ? 1 : 0) + (sort !== 'league' ? 1 : 0) + (filterCount || 0);
   const summary = [dayName, leagueName, sortable ? (sort === 'time' ? 'by time' : 'by competition') : null, filterSummary].filter(Boolean).join(' · ');
@@ -153,7 +153,7 @@ export function FixtureBrowser({ filter, extra, sortable = false, emptyText, fil
       </div>
       <div className="chips">
         <button className={`chip ${league === '' ? 'on' : ''}`} onClick={() => setLeague('')}>All competitions <small>{Object.values(leagueCount).reduce((s, n) => s + n, 0)}</small></button>
-        {(status?.leagues || []).map((l) => (
+        {(status?.competitions || status?.leagues || []).map((l) => (
           <button key={l.code} className={`chip ${league === l.code ? 'on' : ''} ${leagueCount[l.code] ? '' : 'dim'}`} onClick={() => setLeague(l.code)}>
             <Crest team={{ name: l.name, crest: l.emblem }} size={18} />{l.name} <small>{leagueCount[l.code] || 0}</small>
           </button>))}
@@ -164,7 +164,7 @@ export function FixtureBrowser({ filter, extra, sortable = false, emptyText, fil
       <div style={{ marginTop: 8 }}>
         {q.loading && !q.data ? <SkelList n={5} /> : q.error && !q.data ? <ErrorState error={q.error} onRetry={q.reload} /> :
           shown.length ? <MatchList matches={shown} grouped={sort === 'league' && !league} showLeague={sort === 'time' && !league} /> :
-          <Empty icon="calendar" title="No matches here">{emptyText}{emptyText ? ' ' : ''}There are no matches for {league ? (status?.leagues.find((l) => l.code === league)?.name || league) : 'any competition'} {sel === 'week' ? 'this week' : 'on this date'}.{status && !status.lastRun ? ' The first data update is still running.' : ''}</Empty>}
+          <Empty icon="calendar" title="No matches here">{emptyText}{emptyText ? ' ' : ''}There are no matches for {league ? ((status?.competitions || status?.leagues || []).find((l) => l.code === league)?.name || league) : 'any competition'} {sel === 'week' ? 'this week' : 'on this date'}.{status && !status.lastRun ? ' The first data update is still running.' : ''}{league && /^(WEB|ES)_/.test(league) ? ' Gemini searches the web for this competition\'s matches in the background (eFootball about every 40 minutes), so they appear here once it finds them.' : ''}</Empty>}
       </div>
     </div>
   );

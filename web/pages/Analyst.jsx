@@ -107,7 +107,7 @@ function Finished() {
         <div>
           <div className="chips">
             <button className={`chip ${league === '' ? 'on' : ''}`} onClick={() => setLeague('')}>All competitions</button>
-            {(status?.leagues || []).map((l) => <button key={l.code} className={`chip ${league === l.code ? 'on' : ''}`} onClick={() => setLeague(l.code)}><Crest team={{ name: l.name, crest: l.emblem }} size={18} />{l.name}</button>)}
+            {(status?.competitions || status?.leagues || []).map((l) => <button key={l.code} className={`chip ${league === l.code ? 'on' : ''}`} onClick={() => setLeague(l.code)}><Crest team={{ name: l.name, crest: l.emblem }} size={18} />{l.name}</button>)}
           </div>
           <div className="chips" style={{ marginTop: 8 }}>{GROUPS.map((g) => <button key={g} className={`chip ${group === g ? 'on' : ''}`} onClick={() => setGroup(g)}>{g === 'All' ? 'All markets' : g}</button>)}</div>
           <div className="between" style={{ margin: '12px 0', flexWrap: 'wrap', gap: 8 }}>
