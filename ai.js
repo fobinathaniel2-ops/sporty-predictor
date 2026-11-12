@@ -83,7 +83,9 @@ api.generate = async function generate({ system, user, search = false, json = fa
   if (!r.ok) {
     let detail = '', raw = ''; try { const j = await r.json(); raw = JSON.stringify(j.error || {}); detail = j.error?.message || ''; } catch { /* ignore */ }
     if (r.status === 429) { noteRateLimit(raw + ' ' + detail, r.headers.get('retry-after')); u.calls = Math.max(0, u.calls - 1); }
-    throw new AiError(`Gemini API HTTP ${r.status}${detail ? ': ' + detail.slice(0, 120) : ''}`, [400, 401, 403, 404, 429].includes(r.status));
+    // for a 429, say which quota it is (per minute / per day, which model, free tier or not): that decides the fix
+    const quota = r.status === 429 ? ((/"quotaId"\s*:\s*"([^"]+)"/.exec(raw) || [])[1] || '') + ((/"quotaValue"\s*:\s*"([^"]+)"/.exec(raw) || [])[1] ? ` limit ${(/"quotaValue"\s*:\s*"([^"]+)"/.exec(raw) || [])[1]}` : '') : '';
+    throw new AiError(`Gemini API HTTP ${r.status}${quota ? ` [${quota}]` : ''}${detail ? ': ' + detail.slice(0, r.status === 429 ? 60 : 120) : ''} (${search ? 'with web search' : 'no search'}, ${model()})`, [400, 401, 403, 404, 429].includes(r.status));
   }
   const j = await r.json();
   const cand = j.candidates?.[0];
@@ -200,7 +202,7 @@ api.analyse = async function analyse(facts) {
 
 /* ------------------------------------------------------------------------- matches found on the web ---------------- */
 
-const discoverSystem = (names) => `You find real upcoming football fixtures with Google Search. List matches kicking off in the date range given, but ONLY from these competitions, and write the competition field exactly as spelled here: ${names.join('; ')}. Include qualifiers and group/knockout stages of these competitions. Ignore every other competition, youth, women's and friendly matches.
+const discoverSystem = (names) => `You find real upcoming football fixtures with Google Search. Search only for the official match schedule (fixtures, dates and kick-off times) on competition, league, club or esports-organiser websites. Do not search for or use betting odds, bookmaker, tipster or gambling pages; this is a fixtures lookup only. List matches kicking off in the date range given, but ONLY from these competitions, and write the competition field exactly as spelled here: ${names.join('; ')}. Include qualifiers and group/knockout stages of these competitions. Ignore every other competition, youth, women's and friendly matches.
 Rules: only list fixtures the search results actually show; never invent teams, dates or competitions; use full official club names; kickoff must be an ISO 8601 UTC timestamp (convert local times); skip matches whose kickoff time you cannot find; at most 25 matches, most important first. If a competition has no matches in the range (off-season, international break), skip it.
 Reply with a JSON array only: [{"home":"...","away":"...","competition":"...","country":"...","kickoff":"2026-01-31T15:00:00Z"}]`;
 
@@ -218,7 +220,7 @@ api.discover = async function discover(from, to, names = require('./competitions
 };
 
 const WEB_MARKETS = ['1', 'X', '2', '1X', 'X2', '12', 'DNB 1', 'DNB 2', 'Over 1.5', 'Over 2.5', 'Under 2.5', 'Under 3.5', 'BTTS Yes', 'BTTS No', 'Home Over 0.5', 'Away Over 0.5'];
-const WEBPICK_SYSTEM = `You are a careful football analyst with Google Search. For each match in the JSON array, search for recent form, head-to-head, injuries and context, then choose ONE pick with the best chance of winning from this fixed list of SportyBet markets: ${WEB_MARKETS.join(', ')}. (1 = home win, X = draw, 2 = away win, 1X / X2 / 12 = double chance, DNB = draw no bet, BTTS = both teams to score.)
+const WEBPICK_SYSTEM = `You are a careful football analyst with Google Search. For each match in the JSON array, search for recent form, head-to-head, injuries and context, then choose ONE pick with the best chance of winning from this fixed list of prediction markets (labels only; you are not looking at or giving betting advice, and you must not search for odds or bookmaker pages): ${WEB_MARKETS.join(', ')}. (1 = home win, X = draw, 2 = away win, 1X / X2 / 12 = double chance, DNB = draw no bet, BTTS = both teams to score.)
 Rules: base the pick only on what you actually find; give your honest probability estimate (0.30 to 0.95) that the pick wins; never invent news; no pick is guaranteed; if you find little information, choose a safer market and say so.
 Reply with a JSON array only: [{"key":"<match key>","pick":"1X","probability":0.72,"confidence":"Low|Medium","reason":"max 35 words citing what you found"}]`;
 
@@ -255,7 +257,7 @@ api.results = async function results(items) {
 
 /* ------------------------------------------------------------------------------- eFootball / EsportsBattle ----------- */
 
-const discoverEsportsSystem = (names) => `You find upcoming eFootball esports matches (EsportsBattle, virtual football played by real gamers) with Google Search. Look at the EsportsBattle schedule and other public esports schedules. List matches in the time range given from these competitions, writing the competition field exactly as spelled here: ${names.join('; ')}. Also include any other eFootball / EsportsBattle competition you find, named "EsportsBattle - <name>".
+const discoverEsportsSystem = (names) => `You find upcoming eFootball esports matches (EsportsBattle, virtual football played by real gamers) with Google Search. Look at the official EsportsBattle schedule and other public esports schedules. Search only for the official match schedule (fixtures, dates and kick-off times) on competition, league, club or esports-organiser websites. Do not search for or use betting odds, bookmaker, tipster or gambling pages; this is a fixtures lookup only. List matches in the time range given from these competitions, writing the competition field exactly as spelled here: ${names.join('; ')}. Also include any other eFootball / EsportsBattle competition you find, named "EsportsBattle - <name>".
 Rules: only list matches the search results actually show; never invent teams, players or times; write each side as shown, for example "Barcelona (Nikolay)" (club and the gamer in brackets when the source gives the gamer); kickoff must be an ISO 8601 UTC timestamp: use the time zone the source states and convert it to UTC carefully (EsportsBattle lists times in a stated zone); skip matches whose time or time zone you cannot establish; at most 30 matches, the soonest first.
 Reply with a JSON array only: [{"home":"...","away":"...","competition":"...","kickoff":"2026-01-31T15:00:00Z"}]`;
 
@@ -272,7 +274,7 @@ api.discoverEsports = async function discoverEsports(from, to, names = require('
 };
 
 const ES_MARKETS = ['1', 'X', '2', '1X', 'X2', '12', 'DNB 1', 'DNB 2', 'Over 3.5', 'Over 4.5', 'Over 5.5', 'Under 4.5', 'Under 5.5', 'Under 6.5', 'BTTS Yes', 'BTTS No', 'Home Over 1.5', 'Away Over 1.5'];
-const ESPICK_SYSTEM = `You are a careful analyst of eFootball esports (EsportsBattle: virtual football, 2 halves of 4 or 6 minutes, played by real gamers who control the club). Each side is a club played by a named gamer. The gamer's recent form matters far more than the real-life club. For each match in the JSON array, search for the two gamers' recent results, goals scored and conceded per match, head-to-head and the tournament's average goals, then choose TWO picks from this fixed list: ${ES_MARKETS.join(', ')}. (1 = home win, X = draw, 2 = away win, 1X / X2 / 12 = double chance, DNB = draw no bet, BTTS = both score.) "pick" is the one most likely to win. "high_pick" is a higher-odds pick you still find supported, or null.
+const ESPICK_SYSTEM = `You are a careful analyst of eFootball esports (EsportsBattle: virtual football, 2 halves of 4 or 6 minutes, played by real gamers who control the club). Each side is a club played by a named gamer. The gamer's recent form matters far more than the real-life club. For each match in the JSON array, search for the two gamers' recent results, goals scored and conceded per match, head-to-head and the tournament's average goals, then choose TWO picks from this fixed list: ${ES_MARKETS.join(', ')}. (1 = home win, X = draw, 2 = away win, 1X / X2 / 12 = double chance, DNB = draw no bet, BTTS = both score.) "pick" is the one most likely to win. "high_pick" is a bolder, less likely prediction you still find supported by the form data, or null. Search only for gamer form and results, never for odds or bookmaker pages.
 Rules: base the picks only on what you actually find; give honest probability estimates (0.20 to 0.95); never invent results; esports results are very random, so say so when the data is thin and prefer a safer market; no pick is guaranteed.
 Reply with a JSON array only: [{"key":"<match key>","pick":"Over 4.5","probability":0.7,"high_pick":"1","high_probability":0.4,"confidence":"Low|Medium","reason":"max 35 words citing what you found"}]`;
 

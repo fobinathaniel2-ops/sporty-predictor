@@ -1,6 +1,6 @@
 {
   "name": "sporty-predictor",
-  "version": "7.2.1",
+  "version": "7.2.3",
   "description": "Real football data + statistics + Gemini pick selection with verified accuracy tracking",
   "main": "server.js",
   "scripts": {
