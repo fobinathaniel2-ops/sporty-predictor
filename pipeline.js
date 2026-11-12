@@ -674,6 +674,7 @@ async function runStep(step, { now = new Date(), budgetMs = 48000 } = {}) {
   setDeadline(Date.now() + budgetMs);
   resetTriesOnce();
   const d = dbm.data(); const out = { step };
+  ai.setBlock(d.meta.aiBlock); // a rate limit seen by an earlier run still applies
   try {
     if (step === 'live') {
       await liveTickHosted(now, { lock: false }).then((n) => { out.matches = n; });
@@ -697,6 +698,7 @@ async function runStep(step, { now = new Date(), budgetMs = 48000 } = {}) {
     } else if (step === 'esports') {
       out.resolved = await resolveEsportsResults(now); out.found = await addEsportsMatches(now); out.picks = await addEsportsPicks(now); out.done = true;
     } else return { step, done: true, error: 'unknown step' };
+    d.meta.aiBlock = ai.getBlock();
     dbm.save();
   } catch (e) { dbm.log('error', 'pipeline', `${step}: ${e.message}`); out.error = e.message; out.done = true; }
   setDeadline(Infinity);

@@ -140,6 +140,7 @@ export default function Analyst() {
         <div className="row wrap" style={{ marginTop: 14, gap: 6 }}>
           <Tag kind={status?.configured ? 'ok' : 'bad'}>{status?.configured ? 'Football data connected' : 'No football data key'}</Tag>
           <Tag kind={ai?.enabled ? 'ai' : ''}>{ai?.enabled ? `✦ Gemini on${ai.model ? ` · ${ai.model}` : ''}` : 'Gemini off · stats picks only'}</Tag>
+          {ai?.usage?.blockedUntil && <Tag kind="bad">Gemini paused until {new Date(ai.usage.blockedUntil).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · {ai.usage.blockedReason}</Tag>}
           {status?.demo && <Tag kind="demo">DEMO DATA</Tag>}
         </div>
       </div>

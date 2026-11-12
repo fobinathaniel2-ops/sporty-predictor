@@ -39,8 +39,23 @@ function usage() {
 }
 
 /** One Gemini request. search=true turns on Google Search grounding (then JSON mode is unavailable, so we parse the text). */
+/* Rate limit (HTTP 429): remember it and stop calling Gemini until it is over, instead of failing every call of every run. */
+let block = null; // {until: ms, reason, daily}
+api.getBlock = () => (block && block.until > Date.now() ? block : null);
+api.setBlock = (b) => { block = b && b.until > Date.now() ? b : null; };
+function noteRateLimit(detail, retryHeader) {
+  const txt = String(detail || '');
+  const daily = /PerDay|per day|daily/i.test(txt);
+  const m = /"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"/.exec(txt) || /retry in (\d+(?:\.\d+)?)s/i.exec(txt);
+  const secs = m ? Math.ceil(Number(m[1])) + 2 : Number(retryHeader) || 65;
+  const ms = daily ? Math.max(secs * 1000, 60 * 60000) : Math.min(Math.max(secs, 20), 600) * 1000;
+  block = { until: Date.now() + ms, daily, reason: daily ? 'daily quota used up' : 'too many requests per minute', at: new Date().toISOString() };
+}
+
 api.generate = async function generate({ system, user, search = false, json = false, maxTokens = 4096, timeoutMs = 60000 }) {
   if (api.deadline) { const left = api.deadline - Date.now() - 2500; if (left < 6000) throw new AiError('Out of time for this run; will continue next run', false); timeoutMs = Math.min(timeoutMs, left); }
+  const bl = api.getBlock();
+  if (bl) throw new AiError(`Gemini is rate-limited (${bl.reason}); paused until ${new Date(bl.until).toISOString().slice(11, 16)} UTC`, true);
   const u = usage();
   if (u.calls >= dailyCap()) throw new AiError(`Daily AI limit reached (${dailyCap()} requests). Resets at midnight UTC.`, true);
   u.calls++;
@@ -66,7 +81,8 @@ api.generate = async function generate({ system, user, search = false, json = fa
     }
   } catch (e) { throw new AiError(`Gemini request failed: ${e.name === 'AbortError' ? 'timeout' : e.message}`, false); } finally { clearTimeout(timer); }
   if (!r.ok) {
-    let detail = ''; try { detail = (await r.json()).error?.message || ''; } catch { /* ignore */ }
+    let detail = '', raw = ''; try { const j = await r.json(); raw = JSON.stringify(j.error || {}); detail = j.error?.message || ''; } catch { /* ignore */ }
+    if (r.status === 429) { noteRateLimit(raw + ' ' + detail, r.headers.get('retry-after')); u.calls = Math.max(0, u.calls - 1); }
     throw new AiError(`Gemini API HTTP ${r.status}${detail ? ': ' + detail.slice(0, 120) : ''}`, [400, 401, 403, 404, 429].includes(r.status));
   }
   const j = await r.json();
@@ -296,5 +312,5 @@ api.WEB_MARKETS = WEB_MARKETS;
 api.enabled = enabled;
 api.model = model;
 api.AiError = AiError;
-api.usage = () => ({ ...usage(), cap: dailyCap() });
+api.usage = () => ({ ...usage(), cap: dailyCap(), blockedUntil: api.getBlock()?.until ? new Date(api.getBlock().until).toISOString() : null, blockedReason: api.getBlock()?.reason || null });
 module.exports = api;
