@@ -289,6 +289,33 @@ api.discoverEsports = async function discoverEsports(from, to, names = require('
   return { matches: matches.slice(0, 40), sources };
 };
 
+
+const ES_RESEARCH_SYSTEM = `Research the named upcoming eFootball esports matches using Google Search. Find verifiable recent results for each named gamer, goals scored and conceded, recent form, head-to-head meetings, and competition context. Search official EsportsBattle schedules/results and reputable esports match-result pages. Do not use betting, bookmaker, odds, tipster or gambling pages. Never infer missing scores or invent results. Return null for unavailable statistics. Include only source-backed facts and explain the sample size and date range. JSON array only: [{"key":"match key","home_recent_results":["W 3-2"],"away_recent_results":["L 1-4"],"home_goals_for_avg":3.2,"home_goals_against_avg":2.1,"away_goals_for_avg":2.4,"away_goals_against_avg":2.8,"head_to_head":{"played":2,"home_wins":1,"draws":0,"away_wins":1,"summary":"..."}, "sample_size":{"home":5,"away":5},"competition_context":"...","data_as_of":"ISO timestamp","limitations":"..."}]`;
+api.researchEsports = async function researchEsports(items) {
+  const { text, sources } = await api.generate({ system: ES_RESEARCH_SYSTEM, user: items, search: true, maxTokens: 5000, timeoutMs: 45000 });
+  const arr = parseJson(text, 'array');
+  const out = [];
+  const num = (v) => Number.isFinite(Number(v)) && v !== null ? Math.max(0, Math.min(30, Number(v))) : null;
+  const list = (v) => (Array.isArray(v) ? v : []).map((x) => clean(x, 100)).filter(Boolean).slice(0, 5);
+  for (const o of Array.isArray(arr) ? arr : []) {
+    if (!items.some((x) => x.key === o?.key)) continue;
+    const h2h = o.head_to_head && typeof o.head_to_head === 'object' ? {
+      played: Number.isInteger(o.head_to_head.played) ? Math.max(0, o.head_to_head.played) : null,
+      home_wins: Number.isInteger(o.head_to_head.home_wins) ? Math.max(0, o.head_to_head.home_wins) : null,
+      draws: Number.isInteger(o.head_to_head.draws) ? Math.max(0, o.head_to_head.draws) : null,
+      away_wins: Number.isInteger(o.head_to_head.away_wins) ? Math.max(0, o.head_to_head.away_wins) : null,
+      summary: clean(o.head_to_head.summary, 240),
+    } : null;
+    out.push({ key:o.key, home_recent_results:list(o.home_recent_results), away_recent_results:list(o.away_recent_results),
+      home_goals_for_avg:num(o.home_goals_for_avg), home_goals_against_avg:num(o.home_goals_against_avg),
+      away_goals_for_avg:num(o.away_goals_for_avg), away_goals_against_avg:num(o.away_goals_against_avg),
+      head_to_head:h2h, sample_size:{home:Number.isInteger(o.sample_size?.home)?Math.max(0,o.sample_size.home):0,away:Number.isInteger(o.sample_size?.away)?Math.max(0,o.sample_size.away):0},
+      competition_context:clean(o.competition_context,300), data_as_of:clean(o.data_as_of,40), limitations:clean(o.limitations,300),
+      sources:sources.slice(0,8), retrievedAt:new Date().toISOString() });
+  }
+  return out;
+};
+
 const ES_MARKETS = ['1', 'X', '2', '1X', 'X2', '12', 'DNB 1', 'DNB 2', 'Over 3.5', 'Over 4.5', 'Over 5.5', 'Under 4.5', 'Under 5.5', 'Under 6.5', 'BTTS Yes', 'BTTS No', 'Home Over 1.5', 'Away Over 1.5'];
 const ESPICK_SYSTEM = `You are a careful analyst of eFootball esports (EsportsBattle: virtual football, 2 halves of 4 or 6 minutes, played by real gamers who control the club). Each side is a club played by a named gamer. The gamer's recent form matters far more than the real-life club. For each match in the JSON array, search for the two gamers' recent results, goals scored and conceded per match, head-to-head and the tournament's average goals, then choose TWO picks from this fixed list: ${ES_MARKETS.join(', ')}. (1 = home win, X = draw, 2 = away win, 1X / X2 / 12 = double chance, DNB = draw no bet, BTTS = both score.) "pick" is the one most likely to win. "high_pick" is a bolder, less likely prediction you still find supported by the form data, or null. Search only for gamer form and results, never for odds or bookmaker pages.
 Rules: base the picks only on what you actually find; give honest probability estimates (0.20 to 0.95); never invent results; esports results are very random, so say so when the data is thin and prefer a safer market; no pick is guaranteed.
