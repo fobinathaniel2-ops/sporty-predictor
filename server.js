@@ -307,6 +307,13 @@ route('GET', /^\/api\/search$/, (req, res, p, q) => {
   return { teams: r.teams.map((t) => ({ ...teamView(t), league: t.league })), leagues: r.leagues.map((l) => leagueView(l.code)), fixtures: r.fixtures.map((m) => matchView(m)) };
 });
 
+let lastDiag = 0;
+route('GET', /^\/api\/ai-test$/, async () => {
+  if (!ai.enabled()) return { enabled: false, note: 'GEMINI_API_KEY is not set' };
+  if (Date.now() - lastDiag < 60000) throw new HttpError(429, 'Wait a minute before testing again');
+  lastDiag = Date.now();
+  return ai.diagnose();
+});
 route('GET', /^\/api\/news$/, async (req) => {
   if (!ai.enabled()) return { enabled: false, items: [], sources: [] };
   limit(req, 'news', 20, HOUR);

@@ -45,12 +45,28 @@ api.getBlock = () => (block && block.until > Date.now() ? block : null);
 api.setBlock = (b) => { block = b && b.until > Date.now() ? b : null; };
 function noteRateLimit(detail, retryHeader) {
   const txt = String(detail || '');
-  const daily = /PerDay|per day|daily/i.test(txt);
+  const daily = /PerDay|per day|daily/i.test(txt), perMin = /PerMinute|per minute/i.test(txt);
   const m = /"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"/.exec(txt) || /retry in (\d+(?:\.\d+)?)s/i.exec(txt);
   const secs = m ? Math.ceil(Number(m[1])) + 2 : Number(retryHeader) || 65;
-  const ms = daily ? Math.max(secs * 1000, 60 * 60000) : Math.min(Math.max(secs, 20), 600) * 1000;
-  block = { until: Date.now() + ms, daily, reason: daily ? 'daily quota used up' : 'too many requests per minute', at: new Date().toISOString() };
+  const known = daily || perMin || !!m;
+  const ms = daily ? Math.max(secs * 1000, 60 * 60000) : known ? Math.min(Math.max(secs, 20), 600) * 1000 : 5 * 60000; // unknown limit: wait 5 minutes
+  block = { until: Date.now() + ms, daily, reason: daily ? 'daily quota used up' : perMin || m ? 'too many requests per minute' : 'quota or rate limit (Google did not say which)', at: new Date().toISOString() };
 }
+
+/** One tiny call without and one with web search, returning Google's raw answer. For finding out exactly why Gemini fails. */
+api.diagnose = async function diagnose() {
+  const one = async (search) => {
+    try {
+      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model())}:generateContent`, {
+        method: 'POST', signal: AbortSignal.timeout(30000), headers: { 'content-type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY },
+        body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: search ? 'What is the date today? One short sentence.' : 'Reply with the word OK.' }] }], generationConfig: { maxOutputTokens: 40 }, ...(search ? { tools: [{ google_search: {} }] } : {}) }),
+      });
+      const t = await r.text();
+      return { ok: r.ok, status: r.status, retryAfter: r.headers.get('retry-after'), answer: r.ok ? undefined : t.replace(/\s+/g, ' ').slice(0, 1200) };
+    } catch (e) { return { ok: false, error: e.message }; }
+  };
+  return { model: model(), enabled: enabled(), without_search: await one(false), with_search: await one(true), pausedByApp: api.getBlock() };
+};
 
 api.generate = async function generate({ system, user, search = false, json = false, maxTokens = 4096, timeoutMs = 60000 }) {
   if (api.deadline) { const left = api.deadline - Date.now() - 2500; if (left < 6000) throw new AiError('Out of time for this run; will continue next run', false); timeoutMs = Math.min(timeoutMs, left); }
