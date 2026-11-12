@@ -53,7 +53,7 @@ function matchView(m, full) {
   const p = d().predictions[m.id];
   return {
     id: m.id, league: leagueView(m.league), date: m.date, status: m.status, matchday: m.matchday, stage: m.stage,
-    home: teamView(m.home), away: teamView(m.away), ft: m.ft, ht: m.ht, live: m.live, minute: m.minute,
+    home: teamView(m.home), away: teamView(m.away), ft: m.ft, ht: m.ht, live: m.live, minute: m.minute, esportsResearch: m.esportsResearch || null,
     prediction: predView(p, full),
   };
 }
@@ -102,7 +102,7 @@ route('GET', /^\/api\/status$/, () => {
     lastError: dd.apiLogs.find((l) => l.level === 'error')?.message || null,
     push: !!notify.vapidPublic(),
     web: { competitions: Object.values(dd.leagues).filter((l) => l.web).length, matches: Object.values(dd.matches).filter((m) => m.web).length, lastFullRound: dd.meta.webAt || null, nextGroup: dd.meta.webCursor || 0 },
-    recent: dd.apiLogs.filter((l) => l.level !== 'info' || l.source === 'ai-web').slice(0, 6).map((l) => `${l.at.slice(11, 16)} ${l.source}: ${l.message}`),
+    recent: dd.apiLogs.filter((l) => l.level !== 'info' || ['ai-web', 'ai-es'].includes(l.source)).slice(0, 6).map((l) => `${l.at.slice(11, 16)} ${l.source}: ${l.message}`),
   };
 });
 

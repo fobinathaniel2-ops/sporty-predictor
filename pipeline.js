@@ -465,7 +465,7 @@ async function addEsportsMatches(now) {
   const d = dbm.data();
   if (d.meta.esAt && now - new Date(d.meta.esAt) < Number(process.env.AI_ES_EVERY_MIN || 40) * 60000) return 0;
   if (d.meta.esFailAt && now - new Date(d.meta.esFailAt) < 10 * 60000) return 0; // a failed search is retried after 10 minutes
-  if (timeLeft() < 38000) return 0;
+  if (timeLeft() < 22000) return 0;
   const hours = Number(process.env.AI_ES_HOURS || 8);
   let added = 0;
   try {
@@ -489,6 +489,26 @@ async function addEsportsMatches(now) {
   if (added) dbm.log('info', 'ai-es', `${added} eFootball matches found by web search`);
   dbm.save();
   return added;
+}
+
+
+async function addEsportsResearch(now) {
+  if (!ai.enabled() || process.env.AI_ESPORTS === '0' || timeLeft() < 9000) return 0;
+  const d = dbm.data();
+  const todo = Object.values(d.matches).filter((m) => m.esports && m.status === 'SCHEDULED' && new Date(m.date) > now && new Date(m.date) - now < 12 * HOUR && (!m.esportsResearch || now - new Date(m.esportsResearch.retrievedAt || 0) > 6 * HOUR))
+    .sort((a,b) => new Date(a.date)-new Date(b.date)).slice(0,6);
+  let count = 0;
+  for (let i=0; i<todo.length; i+=3) {
+    if (timeLeft() < 9000) break;
+    const chunk=todo.slice(i,i+3);
+    try {
+      const results=await ai.researchEsports(chunk.map(m=>({key:m.id,competition:d.leagues[m.league]?.name,home:m.home.name,away:m.away.name,kickoff:m.date})));
+      for (const item of results) { const m=d.matches[item.key]; if(m){m.esportsResearch=item; count++;} }
+      dbm.log('info','ai-es',`Gemini retrieved descriptive research for ${results.length}/${chunk.length} eFootball matches`);
+    } catch(e) { dbm.log('warn','ai-es',`Research: ${e.message}`); if(e.fatal) break; }
+    dbm.save();
+  }
+  return count;
 }
 
 async function addEsportsPicks(now) {
@@ -670,7 +690,7 @@ function resetTriesOnce() {
 
 /** One scheduled step. Returns { step, done, ... }; the scheduler repeats a step until done is true. */
 async function runStep(step, { now = new Date(), budgetMs = 48000 } = {}) {
-  if (!provider()) return { step, done: true, error: 'FOOTBALL_DATA_KEY not set' };
+  if (step !== 'esports' && !provider()) return { step, done: true, error: 'FOOTBALL_DATA_KEY not set' };
   setDeadline(Date.now() + budgetMs);
   resetTriesOnce();
   const d = dbm.data(); const out = { step };
@@ -696,7 +716,7 @@ async function runStep(step, { now = new Date(), budgetMs = 48000 } = {}) {
       out.found = await addWebMatches(now); await resolveWebResults(now); out.webPicks = await addWebPicks(now);
       out.done = !ai.enabled() || !dbm.data().meta.webCursor;
     } else if (step === 'esports') {
-      out.resolved = await resolveEsportsResults(now); out.found = await addEsportsMatches(now); out.picks = await addEsportsPicks(now); out.done = true;
+      out.found = await addEsportsMatches(now); out.researched = await addEsportsResearch(now); out.resolved = await resolveEsportsResults(now); out.done = true;
     } else return { step, done: true, error: 'unknown step' };
     d.meta.aiBlock = ai.getBlock();
     dbm.save();
@@ -724,7 +744,7 @@ async function run(now = new Date()) {
     const researched = await addResearch(now);
     const aiPicks = await addAiPicks(now);
     const webPicks = await addWebPicks(now);
-    await resolveEsportsResults(now); await addEsportsMatches(now); await addEsportsPicks(now);
+    await addEsportsMatches(now); await addEsportsResearch(now); await resolveEsportsResults(now);
     await resolveEarly(now);
     dbm.data().meta.lastRun = { at: now.toISOString(), ms: Date.now() - t0, settled, predicted, researched, aiPicks, webFound, webPicks };
     dbm.save();
@@ -744,5 +764,5 @@ function start() {
   setInterval(() => liveTick(), sec * 1000).unref?.();
 }
 
-module.exports = { addEsportsMatches, addEsportsPicks, resolveEsportsResults, runStep, maybeLive, liveTickHosted, predictLive, addWebMatches, addWebPicks, resolveWebResults, webCodes, start, run, liveTick, settleAll, predictAll, addResearch, addAiPicks, resolveEarly, remote, cached, isDemo, leagueCodes, provider, FREE_COMPETITIONS,
+module.exports = { addEsportsMatches, addEsportsResearch, addEsportsPicks, resolveEsportsResults, runStep, maybeLive, liveTickHosted, predictLive, addWebMatches, addWebPicks, resolveWebResults, webCodes, start, run, liveTick, settleAll, predictAll, addResearch, addAiPicks, resolveEarly, remote, cached, isDemo, leagueCodes, provider, FREE_COMPETITIONS,
   state: () => ({ running, nextRunAt }) };
