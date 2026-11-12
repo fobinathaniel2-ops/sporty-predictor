@@ -464,12 +464,13 @@ async function addEsportsMatches(now) {
   if (!ai.enabled() || process.env.AI_ESPORTS === '0') return 0;
   const d = dbm.data();
   if (d.meta.esAt && now - new Date(d.meta.esAt) < Number(process.env.AI_ES_EVERY_MIN || 40) * 60000) return 0;
+  if (d.meta.esFailAt && now - new Date(d.meta.esFailAt) < 10 * 60000) return 0; // a failed search is retried after 10 minutes
   if (timeLeft() < 38000) return 0;
   const hours = Number(process.env.AI_ES_HOURS || 8);
   let added = 0;
   try {
     const r = await ai.discoverEsports(new Date(+now).toISOString().slice(0, 16) + 'Z', new Date(+now + hours * HOUR).toISOString().slice(0, 16) + 'Z');
-    d.meta.esAt = now.toISOString();
+    d.meta.esAt = now.toISOString(); d.meta.esFailAt = null;
     dbm.log('info', 'ai-es', `Gemini listed ${r.matches.length} eFootball matches`);
     for (const x of r.matches) {
       const t = new Date(x.kickoff);
@@ -484,7 +485,7 @@ async function addEsportsMatches(now) {
       if (!d.matches[id]) added++;
       d.matches[id] = { ...(d.matches[id] || {}), id, league: code, date: x.kickoff, status: 'SCHEDULED', matchday: null, stage: null, season: engine.seasonOf(x.kickoff), home: h, away: a, ft: null, ht: null, web: true, esports: true, sources: r.sources.slice(0, 3) };
     }
-  } catch (e) { dbm.log('warn', 'ai-es', e.message); }
+  } catch (e) { d.meta.esFailAt = now.toISOString(); dbm.log('warn', 'ai-es', e.message); }
   if (added) dbm.log('info', 'ai-es', `${added} eFootball matches found by web search`);
   dbm.save();
   return added;

@@ -113,12 +113,14 @@ export function FixtureBrowser({ filter, extra, sortable = false, emptyText, fil
   const [offset, setOffset] = useState(0);
   const [sel, setSel] = useState(dayKey(today));
   const [league, setLeague] = useState('');
+  const [game, setGame] = useState('football'); // football | esports: the two are never mixed
   const start = addDays(today, offset * 7);
   const days = Array.from({ length: 7 }, (_, i) => addDays(start, i));
   const q = useApi(`/api/fixtures?from=${encodeURIComponent(start.toISOString())}&to=${encodeURIComponent(addDays(start, 7).toISOString())}`, { poll: prefs.dataSaver ? 120000 : 60000 });
   const [sort, setSort] = useState('league');
   const [open, setOpen] = useState(false);
-  const list = (q.data || []).filter((m) => !filter || filter(m)).sort((a, b) => new Date(a.date) - new Date(b.date));
+  const isEs = (m) => m.league.kind === 'esports';
+  const list = (q.data || []).filter((m) => (game === 'esports') === isEs(m) && (!filter || filter(m))).sort((a, b) => new Date(a.date) - new Date(b.date));
   const inLeague = (m) => !league || m.league.code === league;
   const inDay = (m) => sel === 'week' || dayKey(new Date(m.date)) === sel;
   const dayCount = {}; list.filter(inLeague).forEach((m) => { const k = dayKey(new Date(m.date)); dayCount[k] = (dayCount[k] || 0) + 1; });
@@ -127,10 +129,11 @@ export function FixtureBrowser({ filter, extra, sortable = false, emptyText, fil
   const shown = list.filter((m) => inDay(m) && inLeague(m));
   const move = (n) => { const o = offset + n; setOffset(o); setSel(o === 0 ? dayKey(today) : 'week'); };
   const fmt = (d) => d.toLocaleDateString([], { day: 'numeric', month: 'short' });
+  const comps = (status?.competitions || status?.leagues || []).filter((l) => (game === 'esports') === (l.kind === 'esports'));
   const leagueName = league ? ((status?.competitions || status?.leagues || []).find((l) => l.code === league)?.name || league) : 'All competitions';
   const dayName = sel === 'week' ? `${fmt(days[0])} – ${fmt(days[6])}` : sel === dayKey(today) ? 'Today' : new Date(sel + 'T12:00:00').toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'short' });
-  const activeCount = (league ? 1 : 0) + (sel !== dayKey(today) ? 1 : 0) + (sort !== 'league' ? 1 : 0) + (filterCount || 0);
-  const summary = [dayName, leagueName, sortable ? (sort === 'time' ? 'by time' : 'by competition') : null, filterSummary].filter(Boolean).join(' · ');
+  const activeCount = (game === 'esports' ? 1 : 0) + (league ? 1 : 0) + (sel !== dayKey(today) ? 1 : 0) + (sort !== 'league' ? 1 : 0) + (filterCount || 0);
+  const summary = [game === 'esports' ? 'eFootball' : null, dayName, leagueName, sortable ? (sort === 'time' ? 'by time' : 'by competition') : null, filterSummary].filter(Boolean).join(' · ');
   return (
     <div>
       <div className="card filterbar">
@@ -151,9 +154,10 @@ export function FixtureBrowser({ filter, extra, sortable = false, emptyText, fil
             <span>{k === dayKey(today) ? 'Today' : d.toLocaleDateString([], { weekday: 'short' })}</span><small>{fmt(d)}</small><i>{dayCount[k] || 0}</i>
           </button>); })}
       </div>
+      <div style={{ margin: '0 0 10px' }}><Seg value={game} onChange={(v) => { setGame(v); setLeague(''); }} options={[['football', 'Football'], ['esports', 'eFootball (esports)']]} /></div>
       <div className="chips">
-        <button className={`chip ${league === '' ? 'on' : ''}`} onClick={() => setLeague('')}>All competitions <small>{Object.values(leagueCount).reduce((s, n) => s + n, 0)}</small></button>
-        {(status?.competitions || status?.leagues || []).map((l) => (
+        <button className={`chip ${league === '' ? 'on' : ''}`} onClick={() => setLeague('')}>All {game === 'esports' ? 'eFootball competitions' : 'competitions'} <small>{Object.values(leagueCount).reduce((s, n) => s + n, 0)}</small></button>
+        {comps.map((l) => (
           <button key={l.code} className={`chip ${league === l.code ? 'on' : ''} ${leagueCount[l.code] ? '' : 'dim'}`} onClick={() => setLeague(l.code)}>
             <Crest team={{ name: l.name, crest: l.emblem }} size={18} />{l.name} <small>{leagueCount[l.code] || 0}</small>
           </button>))}

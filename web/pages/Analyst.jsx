@@ -95,19 +95,21 @@ function Finished() {
   const { status } = useApp();
   const q = useApi('/api/results?picks=1&limit=300', { poll: 120000 });
   const [league, setLeague] = useState('');
+  const [game, setGame] = useState('football');
   const [res, setRes] = useState('all');
   const [group, setGroup] = useState('All');
   return (
     <Async q={q} skeleton={<SkelList n={5} />}>{(all) => {
-      const list = all.filter((m) => m.prediction && (!league || m.league.code === league) && (group === 'All' || m.prediction.best?.market === group)
+      const list = all.filter((m) => m.prediction && (game === 'esports') === (m.league.kind === 'esports') && (!league || m.league.code === league) && (group === 'All' || m.prediction.best?.market === group)
         && (res === 'all' || (res === 'won' && m.prediction.best?.correct === true) || (res === 'lost' && m.prediction.best?.correct === false) || (res === 'void' && m.prediction.settled && typeof m.prediction.best?.correct !== 'boolean')));
       const won = list.filter((m) => m.prediction.best?.correct === true).length, lost = list.filter((m) => m.prediction.best?.correct === false).length;
       const days = [...new Map(list.map((m) => [dayKey(new Date(m.date)), m.date])).entries()];
       return (
         <div>
+          <div style={{ marginBottom: 10 }}><Seg value={game} onChange={(v) => { setGame(v); setLeague(''); }} options={[['football', 'Football'], ['esports', 'eFootball (esports)']]} /></div>
           <div className="chips">
             <button className={`chip ${league === '' ? 'on' : ''}`} onClick={() => setLeague('')}>All competitions</button>
-            {(status?.competitions || status?.leagues || []).map((l) => <button key={l.code} className={`chip ${league === l.code ? 'on' : ''}`} onClick={() => setLeague(l.code)}><Crest team={{ name: l.name, crest: l.emblem }} size={18} />{l.name}</button>)}
+            {(status?.competitions || status?.leagues || []).filter((l) => (game === 'esports') === (l.kind === 'esports')).map((l) => <button key={l.code} className={`chip ${league === l.code ? 'on' : ''}`} onClick={() => setLeague(l.code)}><Crest team={{ name: l.name, crest: l.emblem }} size={18} />{l.name}</button>)}
           </div>
           <div className="chips" style={{ marginTop: 8 }}>{GROUPS.map((g) => <button key={g} className={`chip ${group === g ? 'on' : ''}`} onClick={() => setGroup(g)}>{g === 'All' ? 'All markets' : g}</button>)}</div>
           <div className="between" style={{ margin: '12px 0', flexWrap: 'wrap', gap: 8 }}>

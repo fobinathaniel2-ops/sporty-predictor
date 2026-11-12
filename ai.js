@@ -77,11 +77,24 @@ api.generate = async function generate({ system, user, search = false, json = fa
   return { text, sources: sources.filter((s) => !seen.has(s.uri) && seen.add(s.uri)).slice(0, 8) };
 };
 
+/** Finds the first JSON array/object in a reply that may also hold prose, citation marks like [1] or ```json fences. */
 function parseJson(text, kind) {
-  const re = kind === 'array' ? /\[[\s\S]*\]/ : /\{[\s\S]*\}/;
-  const mt = text.match(re);
-  if (!mt) throw new AiError(`Gemini reply had no JSON ${kind}`);
-  try { return JSON.parse(mt[0]); } catch { throw new AiError('Gemini reply was not valid JSON'); }
+  const open = kind === 'array' ? '[' : '{', close = kind === 'array' ? ']' : '}';
+  const src = String(text || '').replace(/```(?:json)?/gi, '');
+  for (let i = src.indexOf(open); i >= 0; i = src.indexOf(open, i + 1)) {
+    let depth = 0, inStr = false, esc = false;
+    for (let j = i; j < src.length; j++) {
+      const c = src[j];
+      if (inStr) { if (esc) esc = false; else if (c === '\\') esc = true; else if (c === '"') inStr = false; continue; }
+      if (c === '"') inStr = true;
+      else if (c === open) depth++;
+      else if (c === close && --depth === 0) {
+        try { const v = JSON.parse(src.slice(i, j + 1)); if (kind === 'object' || v.length === 0 || (v[0] && typeof v[0] === 'object')) return v; } catch { /* not this one: try the next start */ }
+        break;
+      }
+    }
+  }
+  throw new AiError(`Gemini reply had no JSON ${kind}`);
 }
 const clean = (s, n) => String(s ?? '').replace(/\s+/g, ' ').trim().slice(0, n);
 
@@ -227,7 +240,7 @@ api.results = async function results(items) {
 /* ------------------------------------------------------------------------------- eFootball / EsportsBattle ----------- */
 
 const discoverEsportsSystem = (names) => `You find upcoming eFootball esports matches (EsportsBattle, virtual football played by real gamers) with Google Search. Look at the EsportsBattle schedule and other public esports schedules. List matches in the time range given from these competitions, writing the competition field exactly as spelled here: ${names.join('; ')}. Also include any other eFootball / EsportsBattle competition you find, named "EsportsBattle - <name>".
-Rules: only list matches the search results actually show; never invent teams, players or times; write each side as shown, for example "Barcelona (Nikolay)" (club and the gamer in brackets when the source gives the gamer); kickoff must be an ISO 8601 UTC timestamp (convert local times); skip matches whose time you cannot find; at most 30 matches, the soonest first.
+Rules: only list matches the search results actually show; never invent teams, players or times; write each side as shown, for example "Barcelona (Nikolay)" (club and the gamer in brackets when the source gives the gamer); kickoff must be an ISO 8601 UTC timestamp: use the time zone the source states and convert it to UTC carefully (EsportsBattle lists times in a stated zone); skip matches whose time or time zone you cannot establish; at most 30 matches, the soonest first.
 Reply with a JSON array only: [{"home":"...","away":"...","competition":"...","kickoff":"2026-01-31T15:00:00Z"}]`;
 
 api.discoverEsports = async function discoverEsports(from, to, names = require('./competitions').ESPORTS) {
