@@ -4,7 +4,7 @@ import { A, Async, Crest, Empty, Note, Ring, Section, Seg, Skel, SkelCards, Skel
 import { Columns } from '../ui/charts';
 import { FixtureBrowser, MatchList } from '../ui/match';
 import { useApi, useApp } from '../lib/app';
-import { GROUPS, pct } from '../lib/format';
+import { GROUPS, groupsFor, pct } from '../lib/format';
 import { dayKey, relDay } from '../lib/format';
 
 const acc = (x) => (x == null ? '–' : `${Math.round(x * 100)}%`);
@@ -46,9 +46,9 @@ function Record() {
           {a.highOdds?.total > 0 && <div className="tile"><div className="v">{acc(a.highOdds.accuracy)}</div><div className="l">High-odds picks ({a.highOdds.correct}/{a.highOdds.total}) · average fair odds {a.highOdds.avgFairOdds}. Higher odds win less often; fair odds are the model's own estimate, not bookmaker odds.</div></div>}
           {a.ai.total > 0 && a.statsOnAiMatches.total > 0 && <Note info>On the same {a.statsOnAiMatches.total} matches, the plain statistics pick would have scored {acc(a.statsOnAiMatches.accuracy)} against Gemini's {acc(a.ai.accuracy)}.</Note>}
           {a.best.total < 30 && <Note>Only {a.best.total} verified picks so far, which is too few to tell skill from luck. Treat these numbers as early signs, not a result.</Note>}
-          {(a.livePicks.total > 0 || a.webPicks.total > 0 || a.esportsPicks?.total > 0) && <div className="grid g2">
+          {(a.livePicks.total > 0 || a.webPicks.total > 0 || a.basketballPicks?.total > 0) && <div className="grid g2">
             {a.livePicks.total > 0 && <div className="tile"><div className="v">{acc(a.livePicks.accuracy)}</div><div className="l">In-play picks ({a.livePicks.correct}/{a.livePicks.total}) · made after kick-off, counted separately</div></div>}
-            {a.esportsPicks?.total > 0 && <div className="tile"><div className="v">{acc(a.esportsPicks.accuracy)}</div><div className="l">eFootball esports ({a.esportsPicks.correct}/{a.esportsPicks.total}) · estimated from gamers' form, counted separately</div></div>}
+            {a.basketballPicks?.total > 0 && <div className="tile"><div className="v">{acc(a.basketballPicks.accuracy)}</div><div className="l">Basketball picks ({a.basketballPicks.correct}/{a.basketballPicks.total}) · counted separately from football</div></div>}
             {a.webPicks.total > 0 && <div className="tile"><div className="v">{acc(a.webPicks.accuracy)}</div><div className="l">Web-found matches ({a.webPicks.correct}/{a.webPicks.total}) · scores found by web search, counted separately</div></div>}
           </div>}
           <div className="card">
@@ -76,7 +76,7 @@ function HowItWorks() {
     ['Statistics', 'Attack, defence, form, head-to-head and Elo ratings are worked out for each team.'],
     ['Probabilities', 'A Poisson goal model turns them into a chance for every market, including early payout (1UP / 2UP).'],
     ['Gemini', status?.ai?.enabled ? 'Gemini makes the predictions: it searches the web for team news, reads our statistics, then chooses a main pick (best chance) and a high-odds pick from our list. It cannot invent a pick. If Gemini is unavailable, the statistics pick is used. Odds shown are fair odds (1 ÷ probability), not bookmaker odds.' : 'Add a Gemini key and it will search the web for team news and choose one pick from the best-rated options.'],
-    ['eFootball', 'Gemini searches the EsportsBattle schedules (and other eFootball competitions), estimates each pick from the two gamers\' recent form, and later looks up the score to check it. Esports results are very random, they are counted separately, and the percentages are Gemini\'s own estimates.'],
+    ['Basketball', 'Basketball games come from API-Sports. Each team\'s scoring and conceding averages give an expected score for both sides, and the margin and total points are modelled around it. Picks are winner, handicap and total-points markets. They are estimates, counted separately from football.'],
     ['Web finds', status?.ai?.enabled ? 'Gemini also searches the web for top-league and cup matches missing from the data feed, and picks for them. Those percentages are its own estimates, so they are marked WEB.' : 'With a Gemini key it also searches the web for extra top-league and cup matches and picks for them.'],
     ['Live', 'Matches in play get a pick that uses the current score and the minutes left. These are marked LIVE PICK and counted separately.'],
     ['Locked & checked', 'A pick is saved before kick-off and cannot change. After full time it is marked right or wrong from the real result.'],
@@ -100,18 +100,18 @@ function Finished() {
   const [group, setGroup] = useState('All');
   return (
     <Async q={q} skeleton={<SkelList n={5} />}>{(all) => {
-      const list = all.filter((m) => m.prediction && (game === 'esports') === (m.league.kind === 'esports') && (!league || m.league.code === league) && (group === 'All' || m.prediction.best?.market === group)
+      const list = all.filter((m) => m.prediction && (game === 'basketball') === (m.league.kind === 'basketball') && (!league || m.league.code === league) && (group === 'All' || m.prediction.best?.market === group)
         && (res === 'all' || (res === 'won' && m.prediction.best?.correct === true) || (res === 'lost' && m.prediction.best?.correct === false) || (res === 'void' && m.prediction.settled && typeof m.prediction.best?.correct !== 'boolean')));
       const won = list.filter((m) => m.prediction.best?.correct === true).length, lost = list.filter((m) => m.prediction.best?.correct === false).length;
       const days = [...new Map(list.map((m) => [dayKey(new Date(m.date)), m.date])).entries()];
       return (
         <div>
-          <div style={{ marginBottom: 10 }}><Seg value={game} onChange={(v) => { setGame(v); setLeague(''); }} options={[['football', 'Football'], ['esports', 'eFootball (esports)']]} /></div>
+          <div style={{ marginBottom: 10 }}><Seg value={game} onChange={(v) => { setGame(v); setLeague(''); }} options={[['football', 'Football'], ['basketball', 'Basketball']]} /></div>
           <div className="chips">
             <button className={`chip ${league === '' ? 'on' : ''}`} onClick={() => setLeague('')}>All competitions</button>
-            {(status?.competitions || status?.leagues || []).filter((l) => (game === 'esports') === (l.kind === 'esports')).map((l) => <button key={l.code} className={`chip ${league === l.code ? 'on' : ''}`} onClick={() => setLeague(l.code)}><Crest team={{ name: l.name, crest: l.emblem }} size={18} />{l.name}</button>)}
+            {(status?.competitions || status?.leagues || []).filter((l) => (game === 'basketball') === (l.kind === 'basketball')).map((l) => <button key={l.code} className={`chip ${league === l.code ? 'on' : ''}`} onClick={() => setLeague(l.code)}><Crest team={{ name: l.name, crest: l.emblem }} size={18} />{l.name}</button>)}
           </div>
-          <div className="chips" style={{ marginTop: 8 }}>{GROUPS.map((g) => <button key={g} className={`chip ${group === g ? 'on' : ''}`} onClick={() => setGroup(g)}>{g === 'All' ? 'All markets' : g}</button>)}</div>
+          <div className="chips" style={{ marginTop: 8 }}>{groupsFor(game).map((g) => <button key={g} className={`chip ${group === g ? 'on' : ''}`} onClick={() => setGroup(g)}>{g === 'All' ? 'All markets' : g}</button>)}</div>
           <div className="between" style={{ margin: '12px 0', flexWrap: 'wrap', gap: 8 }}>
             <Seg value={res} onChange={setRes} options={[['all', 'All'], ['won', 'Won'], ['lost', 'Lost']]} />
             <span className="sm muted"><b className="g">{won} won</b> · <b style={{ color: 'var(--red)' }}>{lost} lost</b>{won + lost ? ` · ${Math.round((won / (won + lost)) * 100)}%` : ''} · {list.length} matches</span>
@@ -150,10 +150,10 @@ export default function Analyst() {
       {view === 'finished' && <Finished />}
       {view === 'picks' && (
         <FixtureBrowser sortable filterCount={(group !== 'All' ? 1 : 0) + (conf !== 'All' ? 1 : 0)} filterSummary={[group !== 'All' && group, conf !== 'All' && `${conf} confidence`].filter(Boolean).join(' · ')}
-          filter={(m) => m.prediction && (group === 'All' || m.prediction.best?.market === group) && (conf === 'All' || m.prediction.confidence === conf)}
+          filter={(m) => m.prediction && (group === 'All' || m.prediction.best?.market === group || !groupsFor(m.league.kind === 'basketball' ? 'basketball' : 'football').includes(group)) && (conf === 'All' || m.prediction.confidence === conf)}
           emptyText="No picks match these filters."
-          extra={<>
-            <div className="chips" style={{ marginTop: 4 }}>{GROUPS.map((g) => <button key={g} className={`chip ${group === g ? 'on' : ''}`} onClick={() => setGroup(g)}>{g === 'All' ? 'All markets' : g}</button>)}</div>
+          extra={(game) => <>
+            <div className="chips" style={{ marginTop: 4 }}>{groupsFor(game).map((g) => <button key={g} className={`chip ${group === g ? 'on' : ''}`} onClick={() => setGroup(g)}>{g === 'All' ? 'All markets' : g}</button>)}</div>
             <div className="chips" style={{ marginTop: 8 }}>{['All', 'High', 'Medium', 'Low'].map((c) => <button key={c} className={`chip ${conf === c ? 'on' : ''}`} onClick={() => setConf(c)}>{c === 'All' ? 'Any confidence' : `${c} confidence`}</button>)}</div>
           </>} />)}
     </div>

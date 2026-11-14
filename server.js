@@ -11,6 +11,9 @@ const ai = require('./ai');
 const engine = require('./engine');
 const stats = require('./stats');
 const comps = require('./competitions');
+const sports = require('./sports');
+const bk = require('./basketball');
+const apisports = require('./apisports');
 const analysisMod = require('./analysis');
 const notify = require('./notify');
 
@@ -32,7 +35,7 @@ const teamView = (t) => ({ id: t.id, name: t.name, crest: crestOf(t) });
 const KIND_CUP = /Cup|Pokal|Copa|Coppa|Coupe|UEFA|FIFA|CAF |AFC |CONCACAF|Nations|Champions League|Libertadores|Sudamericana|AFCON|Euro/;
 const leagueView = (code) => {
   const l = d().leagues[code]; const name = l?.name || code; const i = comps.NAMES.indexOf(name);
-  return { code, name, country: l?.country || '', emblem: l?.emblem || null, demo: !!l?.demo, web: !!l?.web, order: i < 0 ? 999 : i, kind: l?.esports ? 'esports' : KIND_CUP.test(name) && !/Premier League|Pro League|Primeira|Premiership/.test(name) ? 'cup' : 'league' };
+  return { code, name, country: l?.country || '', emblem: l?.emblem || null, demo: !!l?.demo, web: !!l?.web, order: i < 0 ? 999 : i, kind: l?.sport === 'basketball' ? 'basketball' : KIND_CUP.test(name) && !/Premier League|Pro League|Primeira|Premiership/.test(name) ? 'cup' : 'league' };
 };
 
 function predView(p, full) {
@@ -40,11 +43,11 @@ function predView(p, full) {
   const o = {
     best: p.best, high: p.high || null, statsBest: p.statsBest && { id: p.statsBest.id, label: p.statsBest.label, p: p.statsBest.p, correct: p.statsBest.correct },
     confidence: p.confidence, locked: p.locked, settled: p.settled, void: !!p.void,
-    probs: p.pm['1'] !== undefined && p.pm.X !== undefined ? { home: p.pm['1'], draw: p.pm.X, away: p.pm['2'] } : null, hasNotes: !!p.research?.notes?.length,
-    kind: p.late ? 'live' : p.esports ? 'esports' : p.web ? 'web' : 'pre', inplay: p.inplay || null, webNote: p.webNote || null, liveAt: p.liveAt || null,
+    probs: p.pm['1'] !== undefined && p.pm.X !== undefined ? { home: p.pm['1'], draw: p.pm.X, away: p.pm['2'] } : null, twoWay: p.sport === 'basketball' && p.pm['1'] !== undefined ? { home: p.pm['1'], away: p.pm['2'] } : null, hasNotes: !!p.research?.notes?.length,
+    sport: p.sport || 'football', kind: p.late ? 'live' : p.web ? 'web' : 'pre', inplay: p.inplay || null, webNote: p.webNote || null, liveAt: p.liveAt || null,
   };
   if (full) {
-    Object.assign(o, { xg: { home: p.lh, away: p.la }, topScores: p.topScores, context: p.context, generatedAt: p.generatedAt, modelVersion: p.modelVersion, research: p.research || null, actual: p.actual || null });
+    Object.assign(o, { xg: { home: p.lh, away: p.la }, expected: p.expected || null, topScores: p.topScores, context: p.context, generatedAt: p.generatedAt, modelVersion: p.modelVersion, research: p.research || null, actual: p.actual || null });
   }
   return o;
 }
@@ -83,17 +86,17 @@ function competitionList() {
   const dd = d(); const have = new Map(); const out = [];
   for (const c of active()) if (dd.leagues[c]) { const v = leagueView(c); have.set(v.name, true); out.push({ ...v, matches: Object.values(dd.matches).filter((m) => m.league === c).length }); }
   comps.LIST.forEach((c, i) => { if (!have.has(c.name)) out.push({ code: comps.webCode(c.name), name: c.name, country: '', emblem: null, demo: false, web: true, order: i, kind: KIND_CUP.test(c.name) && !/Premier League|Pro League|Primeira|Premiership/.test(c.name) ? 'cup' : 'league', matches: 0 }); });
-  comps.ESPORTS.forEach((n, i) => { if (!have.has(n)) out.push({ code: comps.esCode(n), name: n, country: 'eSports', emblem: null, demo: false, web: true, order: 1000 + i, kind: 'esports', matches: 0 }); });
-  return out.map((x) => (x.kind === 'esports' && x.order < 1000 ? { ...x, order: 1000 + x.order } : x)).sort((a, b) => a.order - b.order);
+  return out.sort((a, b) => a.order - b.order);
 }
 route('GET', /^\/api\/status$/, () => {
   const dd = d(); const codes = active(); const st = pipeline.state(); const prov = pipeline.provider();
   const live = Object.values(dd.matches).filter((m) => m.status === 'LIVE' && codes.includes(m.league)).length;
   return {
-    configured: !!prov, provider: prov?.name || null, demo: pipeline.isDemo(),
+    configured: !!prov || apisports.enabled(), provider: prov?.name || (apisports.enabled() ? 'api-sports.io' : null), demo: pipeline.isDemo(),
     ai: { enabled: ai.enabled(), provider: 'Gemini', model: ai.enabled() ? ai.model() : null, usage: ai.enabled() ? ai.usage() : null },
     leagues: codes.filter((c) => dd.leagues[c]).map((c) => leagueView(c)).sort((a, b) => a.order - b.order),
     competitions: competitionList(),
+    sports: sports.status(),
     lastRun: dd.meta.lastRun || null, running: st.running, nextRunAt: st.nextRunAt,
     counts: {
       live, upcoming: Object.values(dd.matches).filter((m) => m.status === 'SCHEDULED' && codes.includes(m.league)).length,
@@ -240,20 +243,23 @@ route('GET', /^\/api\/match\/([\w-]+)$/, async (req, res, [id]) => {
   const p = d().predictions[id];
   let detail = null, detailNote = null, stale = false;
   const near = m.status === 'LIVE' || m.status === 'FINISHED' || new Date(m.date) - Date.now() < 2 * HOUR;
-  if (!pipeline.provider()) detailNote = 'No data source configured.';
+  if (m.ext) detailNote = m.sport === 'basketball' ? 'Quarter scores appear after the game.' : 'Lineups and match statistics are not loaded for this competition.';
+  else if (!pipeline.provider()) detailNote = 'No data source configured.';
   else if (!near) detailNote = 'Lineups, events and match statistics appear on match day.';
   else {
     try { const r = await pipeline.remote.detail(m); detail = r.value; stale = r.stale; } catch (e) { detailNote = `Match details unavailable: ${e.message}`; }
   }
   const an = analysisMod.analyse(d(), m, p);
-  const groups = p ? engine.GROUP_ORDER.map((g) => ({
-    group: g, items: Object.entries(p.pm).filter(([k]) => engine.groupOf(k) === g).map(([k, v]) => ({ id: k, p: v, about: engine.explain(k, m.home.name, m.away.name) })).sort((a, b) => b.p - a.p),
+  const bkt = m.sport === 'basketball';
+  const gOf = bkt ? bk.groupOf : engine.groupOf, gx = bkt ? bk.explain : engine.explain;
+  const groups = p ? (bkt ? bk.GROUP_ORDER : engine.GROUP_ORDER).map((g) => ({
+    group: g, items: Object.entries(p.pm).filter(([k]) => gOf(k) === g).map(([k, v]) => ({ id: k, p: v, about: gx(k, m.home.name, m.away.name) })).sort((a, b) => b.p - a.p),
   })) : [];
   const rec = (t) => stats.teamRecord(d(), t.id);
   const rh = rec(m.home), ra = rec(m.away);
   const pos = async (t) => (await positionIn(m.league, t.id));
   return {
-    match: { ...matchView(m, true), web: !!m.web, resultSource: m.resultSource || null, sources: m.sources || null, venue: detail?.venue || null, referee: detail?.referee || null },
+    match: { ...matchView(m, true), web: !!m.web, sport: m.sport || 'football', quarters: m.quarters || null, resultSource: m.resultSource || null, sources: m.sources || null, venue: detail?.venue || null, referee: detail?.referee || null },
     detail, detailNote, stale, markets: groups,
     form: { home: { form: rh.form, recent: rh.recent.map((r) => ({ ...r, opp: teamView(r.opp) })), home: rh.home, away: rh.away }, away: { form: ra.form, recent: ra.recent.map((r) => ({ ...r, opp: teamView(r.opp) })), home: ra.home, away: ra.away } },
     standings: { home: await pos(m.home), away: await pos(m.away) },
@@ -307,6 +313,23 @@ route('GET', /^\/api\/search$/, (req, res, p, q) => {
   return { teams: r.teams.map((t) => ({ ...teamView(t), league: t.league })), leagues: r.leagues.map((l) => leagueView(l.code)), fixtures: r.fixtures.map((m) => matchView(m)) };
 });
 
+let lastSportsTest = 0;
+/** Opens API-Sports once for football and once for basketball and says what came back (2 requests; once a minute). */
+route('GET', /^\/api\/sports-test$/, async () => {
+  if (!apisports.enabled()) return { configured: false, note: 'API_SPORTS_KEY is not set in the environment variables' };
+  if (Date.now() - lastSportsTest < 60000) throw new HttpError(429, 'Wait a minute before testing again');
+  lastSportsTest = Date.now();
+  const date = new Date().toISOString().slice(0, 10), out = { configured: true, date };
+  try { out.account = await apisports.account(); } catch (e) { out.account = { error: e.message }; }
+  for (const sport of ['football', 'basketball']) {
+    try {
+      const r = await apisports.day(sport, date);
+      const names = [...new Set(r.items.map((x) => `${x.league.name}${x.league.country ? ' (' + x.league.country + ')' : ''}`))];
+      out[sport] = { ok: true, rows: r.total, usable: r.items.length, rejected: r.rejected, leagues: names.length, sampleLeagues: names.slice(0, 12), remaining: r.remaining, limit: r.limit };
+    } catch (e) { out[sport] = { ok: false, kind: e.kind || 'error', error: e.message }; }
+  }
+  return out;
+});
 let lastDiag = 0;
 route('GET', /^\/api\/ai-test$/, async () => {
   if (!ai.enabled()) return { enabled: false, note: 'GEMINI_API_KEY is not set' };

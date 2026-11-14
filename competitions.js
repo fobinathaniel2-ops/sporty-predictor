@@ -60,31 +60,13 @@ function canonical(name, country) {
   return index.get(k) || null;
 }
 
-/** eFootball / EsportsBattle (virtual football played by real gamers). Found by Gemini web search only; there is no feed for them. */
-const ESPORTS = [
-  'EsportsBattle - Champions League A 2x6', 'EsportsBattle - Champions League AFC', 'EsportsBattle - Champions League B', 'EsportsBattle - CSL',
-  'EsportsBattle - EFL Championship', 'EsportsBattle - Europa League', 'EsportsBattle - International A 2x6', 'EsportsBattle - Ligue 1',
-  'EsportsBattle - Serie A', 'EsportsBattle - Volta Champions League A', 'EsportsBattle - Volta World Cup B',
-];
-const ES_RE = /e-?sports ?battle|e-?football|efootball|pes league|fifa.*(esports|volta)|volta/i;
-/** Any eFootball / EsportsBattle competition name (the listed ones, or others) -> {name, esports:true}, else null. */
-function esportsCanonical(name) {
-  const raw = String(name || '').replace(/\s+/g, ' ').trim();
-  if (!raw || !ES_RE.test(raw)) return null;
-  const k = norm(raw), hit = ESPORTS.find((n) => norm(n) === k);
-  if (hit) return { name: hit, esports: true };
-  const tail = raw.replace(/^(efootball|e-football)\s*[-–:]?\s*/i, '').replace(/^e-?sports ?battle\s*[-–:]?\s*/i, '').trim().slice(0, 50);
-  return { name: `EsportsBattle - ${tail || 'Other'}`, esports: true };
-}
-
 const slug = (x) => String(x).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 /** The league code a competition gets when its matches are found by web search. */
 const webCode = (name) => `WEB_${slug(name).slice(0, 36).replace(/-/g, '_')}`;
-const esCode = (name) => `ES_${slug(name).slice(0, 40).replace(/-/g, '_')}`;
 
 const NAMES = LIST.map((c) => c.name);
 const CODES = LIST.filter((c) => c.code).map((c) => c.code);
 const FREE_CODES = ['PL', 'ELC', 'PD', 'SA', 'BL1', 'FL1', 'DED', 'PPL', 'BSA', 'CL', 'EC', 'WC'];
 const byCode = (code) => LIST.find((c) => c.code === code) || null;
 
-module.exports = { webCode, esCode, ESPORTS, esportsCanonical, LIST, NAMES, CODES, FREE_CODES, canonical, byCode };
+module.exports = { webCode, LIST, NAMES, CODES, FREE_CODES, canonical, byCode };

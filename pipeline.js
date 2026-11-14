@@ -9,6 +9,8 @@
 const dbm = require('./db');
 const engine = require('./engine');
 const ai = require('./ai');
+const sports = require('./sports');
+const bk = require('./basketball');
 
 const DAY = 86400000, HOUR = 3600000;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -167,7 +169,8 @@ function settleAll(now) {
     const m = d.matches[p.matchId];
     if (!m) continue;
     if (m.status === 'FINISHED' && m.ft) {
-      for (const key of ['best', 'statsBest', 'high', 'statsHigh']) if (p[key]) p[key].correct = engine.settleId(p[key].id, m.ft, m.ht);
+      const basket = m.sport === 'basketball';
+      for (const key of ['best', 'statsBest', 'high', 'statsHigh']) if (p[key]) p[key].correct = basket ? bk.settleId(p[key].id, m.ft) : engine.settleId(p[key].id, m.ft, m.ht);
       p.actual = { ft: m.ft, ht: m.ht || null, result: m.ft[0] > m.ft[1] ? '1' : m.ft[0] === m.ft[1] ? 'X' : '2' };
       p.settled = true; p.settledAt = now.toISOString(); p.locked = true; settled++;
     } else if (m.status === 'OTHER' && now - new Date(m.date) > 3 * DAY) {
@@ -254,7 +257,7 @@ function predictAll(now) {
 }
 
 const upcoming = (now, maxMs) => Object.values(dbm.data().predictions)
-  .filter((p) => !p.web && !p.late && !p.settled && !p.locked && new Date(p.kickoff) > now && new Date(p.kickoff) - now < maxMs && dbm.data().matches[p.matchId])
+  .filter((p) => !p.web && !p.late && p.sport !== 'basketball' && !p.settled && !p.locked && new Date(p.kickoff) > now && new Date(p.kickoff) - now < maxMs && dbm.data().matches[p.matchId])
   .sort((a, b) => new Date(a.kickoff) - new Date(b.kickoff));
 
 
@@ -319,11 +322,8 @@ function knownTeam(name) {
 /** Remove web-found competitions that are not on the allowed list (e.g. left over from an earlier version). */
 function pruneWeb() {
   const d = dbm.data(); const okNames = new Set(comps.NAMES);
-  const old = Date.now() - 7 * DAY; // eFootball matches come in hundreds: keep a week
-  for (const [id, m] of Object.entries(d.matches)) if (m.esports && new Date(m.date) < old) { delete d.matches[id]; delete d.predictions[id]; }
-  for (const [code, l] of Object.entries(d.leagues)) if (l.esports && !Object.values(d.matches).some((m) => m.league === code)) delete d.leagues[code];
   for (const [code, l] of Object.entries(d.leagues)) {
-    if (!l.web || l.esports || okNames.has(l.name)) continue;
+    if (!l.web || l.ext || okNames.has(l.name)) continue;
     for (const [id, m] of Object.entries(d.matches)) if (m.league === code) { delete d.matches[id]; delete d.predictions[id]; }
     delete d.leagues[code];
   }
@@ -339,7 +339,9 @@ async function addWebMatches(now) {
   const day = (n) => new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + n)).toISOString().slice(0, 10);
   // Competitions the data feed already covers are skipped. The rest are searched in small groups so each call is quick.
   const covered = new Set(leagueCodes());
-  const names = comps.LIST.filter((c) => !(c.code && covered.has(c.code))).map((c) => c.name);
+  // competitions API-Sports already supplies (it returned matches for them) need no web search
+  const viaApi = new Set(Object.values(dbm.data().leagues).filter((l) => l.ext && l.sport === 'football' && Object.values(dbm.data().matches).some((m) => m.league === l.code && new Date(m.date) > now)).map((l) => l.name));
+  const names = comps.LIST.filter((c) => !(c.code && covered.has(c.code)) && !viaApi.has(c.name)).map((c) => c.name);
   const GROUP = Number(process.env.AI_WEB_GROUP || 8);
   const groups = []; for (let i = 0; i < names.length; i += GROUP) groups.push(names.slice(i, i + GROUP));
   let cursor = d.meta.webCursor || 0; if (cursor >= groups.length) cursor = 0;
@@ -355,7 +357,7 @@ async function addWebMatches(now) {
         const t = new Date(x.kickoff);
         if (t <= now || t - now > (days + 1) * DAY) continue;
         const canon = comps.canonical(x.competition, x.country);
-        if (!canon || (canon.code && leagueCodes().includes(canon.code))) continue; // not on the list, or already covered by the data feed
+        if (!canon || (canon.code && leagueCodes().includes(canon.code)) || viaApi.has(canon.name)) continue; // not on the list, or already covered by the data feed
         x.competition = canon.name;
         const hk = knownTeam(x.home), ak = knownTeam(x.away);
         const hn = hk?.name || x.home, an = ak?.name || x.away;
@@ -390,7 +392,7 @@ async function addWebMatches(now) {
 /** Cup/other fixtures between teams we have statistics for use the stats model; the rest get a Gemini web pick. */
 async function addWebPicks(now) {
   const d = dbm.data();
-  const todo = Object.values(d.matches).filter((m) => m.web && !m.esports && m.status === 'SCHEDULED' && new Date(m.date) > now && !d.predictions[m.id] && (m.webTries || 0) < 2)
+  const todo = Object.values(d.matches).filter((m) => m.web && !m.ext && m.status === 'SCHEDULED' && new Date(m.date) > now && !d.predictions[m.id] && (m.webTries || 0) < 2)
     .sort((a, b) => new Date(a.date) - new Date(b.date));
   let n = 0; const rest = [];
   for (const m of todo) {
@@ -439,7 +441,7 @@ async function addWebPicks(now) {
 async function resolveWebResults(now) {
   if (!ai.enabled() || process.env.AI_WEB === '0') return 0;
   const d = dbm.data();
-  const due = Object.values(d.matches).filter((m) => m.web && !m.esports && m.status === 'SCHEDULED' && now - new Date(m.date) > 3 * HOUR && (m.resTries || 0) < 4).slice(0, 12);
+  const due = Object.values(d.matches).filter((m) => m.web && !m.ext && m.status === 'SCHEDULED' && now - new Date(m.date) > 3 * HOUR && (m.resTries || 0) < 4).slice(0, 12);
   let n = 0;
   for (let i = 0; i < due.length; i += 6) {
     if (timeLeft() < 20000) break;
@@ -449,93 +451,6 @@ async function resolveWebResults(now) {
       for (const r of res) { const m = d.matches[r.key]; m.status = 'FINISHED'; m.ft = r.ft; m.ht = r.ht; m.resultSource = 'web'; n++; }
       for (const m of chunk) if (m.status === 'SCHEDULED') { m.resTries = (m.resTries || 0) + 1; if (m.resTries >= 4 && now - new Date(m.date) > 2 * DAY) m.status = 'OTHER'; }
     } catch (e) { if (!e.fatal) for (const m of chunk) m.resTries = (m.resTries || 0) + 1; dbm.log('warn', 'ai-web', e.message); if (e.fatal) break; }
-    dbm.save();
-  }
-  if (n) { settleAll(now); dbm.save(); }
-  return n;
-}
-
-/* ------------------------------------------------------------------------------------ eFootball / EsportsBattle ---- */
-// Virtual football played by gamers. There is no data feed: Gemini finds the schedule, estimates the picks from the gamers'
-// recent form and looks up the final scores. Counted separately from real football everywhere.
-
-async function addEsportsMatches(now) {
-  pruneWeb();
-  if (!ai.enabled() || process.env.AI_ESPORTS === '0') return 0;
-  const d = dbm.data();
-  if (d.meta.esAt && now - new Date(d.meta.esAt) < Number(process.env.AI_ES_EVERY_MIN || 40) * 60000) return 0;
-  if (d.meta.esFailAt && now - new Date(d.meta.esFailAt) < 10 * 60000) return 0; // a failed search is retried after 10 minutes
-  if (timeLeft() < 38000) return 0;
-  const hours = Number(process.env.AI_ES_HOURS || 8);
-  let added = 0;
-  try {
-    const r = await ai.discoverEsports(new Date(+now).toISOString().slice(0, 16) + 'Z', new Date(+now + hours * HOUR).toISOString().slice(0, 16) + 'Z');
-    d.meta.esAt = now.toISOString(); d.meta.esFailAt = null;
-    dbm.log('info', 'ai-es', `Gemini listed ${r.matches.length} eFootball matches`);
-    for (const x of r.matches) {
-      const t = new Date(x.kickoff);
-      if (t <= now || t - now > (hours + 1) * HOUR) continue;
-      const canon = comps.esportsCanonical(x.competition); if (!canon) continue;
-      const code = comps.esCode(canon.name);
-      d.leagues[code] = { ...(d.leagues[code] || {}), code, name: canon.name, country: 'eSports', emblem: null, web: true, esports: true };
-      const id = 'es_' + require('crypto').createHash('md5').update(`${code}|${normName(x.home)}|${normName(x.away)}|${x.kickoff.slice(0, 16)}`).digest('hex').slice(0, 10);
-      const side = (n) => ({ id: `e_${slug(n).replace(/-/g, '_')}`, name: n, crest: null });
-      const h = side(x.home), a = side(x.away);
-      for (const tm of [h, a]) if (!d.teams[tm.id]) d.teams[tm.id] = { id: tm.id, name: tm.name, crest: null };
-      if (!d.matches[id]) added++;
-      d.matches[id] = { ...(d.matches[id] || {}), id, league: code, date: x.kickoff, status: 'SCHEDULED', matchday: null, stage: null, season: engine.seasonOf(x.kickoff), home: h, away: a, ft: null, ht: null, web: true, esports: true, sources: r.sources.slice(0, 3) };
-    }
-  } catch (e) { d.meta.esFailAt = now.toISOString(); dbm.log('warn', 'ai-es', e.message); }
-  if (added) dbm.log('info', 'ai-es', `${added} eFootball matches found by web search`);
-  dbm.save();
-  return added;
-}
-
-async function addEsportsPicks(now) {
-  if (!ai.enabled() || process.env.AI_ESPORTS === '0') return 0;
-  const d = dbm.data();
-  const todo = Object.values(d.matches).filter((m) => m.esports && m.status === 'SCHEDULED' && new Date(m.date) > now && new Date(m.date) - now < 4 * HOUR && !d.predictions[m.id] && (m.webTries || 0) < 2)
-    .sort((a, b) => new Date(a.date) - new Date(b.date)).slice(0, Number(process.env.AI_ES_PICKS || 12));
-  let n = 0;
-  for (let i = 0; i < todo.length; i += 6) {
-    if (timeLeft() < 20000) break;
-    const chunk = todo.slice(i, i + 6);
-    try {
-      const r = await ai.pickEsports(chunk.map((m) => ({ key: m.id, competition: d.leagues[m.league]?.name, home: m.home.name, away: m.away.name, kickoff: m.date })));
-      const got = new Set();
-      for (const pk of r.picks) {
-        const m = d.matches[pk.key]; if (!m) continue;
-        const mk = (id, p) => ({ id, market: engine.groupOf(id), pick: id, label: id, p, odds: engine.fairOdds(p), about: engine.explain(id, m.home.name, m.away.name), source: 'ai', estimated: true, reason: pk.reason, model: ai.model() });
-        d.predictions[m.id] = {
-          matchId: m.id, league: m.league, kickoff: m.date, modelVersion: 'esports-1', generatedAt: now.toISOString(), updatedAt: now.toISOString(),
-          pm: { [pk.pick]: pk.p }, lh: null, la: null, topScores: [], context: { elo: null, form: { home: null, away: null }, h2h: { meetings: 0, avgGoalDiff: null }, played: { home: 0, away: 0 } },
-          confidence: 'Low', best: mk(pk.pick, pk.p), high: pk.high ? mk(pk.high.pick, pk.high.p) : null, statsBest: null,
-          research: { notes: pk.reason ? [pk.reason] : [], sources: r.sources, at: now.toISOString() },
-          locked: false, settled: false, web: true, esports: true, webNote: 'eFootball esports: virtual football played by gamers. Gemini estimated this pick from the gamers\' recent form found on the web. There are no stored statistics, and results are very random.',
-        };
-        got.add(m.id); n++;
-      }
-      for (const m of chunk) if (!got.has(m.id)) m.webTries = (m.webTries || 0) + 1;
-    } catch (e) { if (!e.fatal) for (const m of chunk) m.webTries = (m.webTries || 0) + 1; dbm.log('warn', 'ai-es', e.message); if (e.fatal) break; }
-    dbm.save();
-  }
-  return n;
-}
-
-async function resolveEsportsResults(now) {
-  if (!ai.enabled() || process.env.AI_ESPORTS === '0') return 0;
-  const d = dbm.data();
-  const due = Object.values(d.matches).filter((m) => m.esports && m.status === 'SCHEDULED' && d.predictions[m.id] && now - new Date(m.date) > 30 * 60000 && (m.resTries || 0) < 5)
-    .sort((a, b) => new Date(a.date) - new Date(b.date)).slice(0, 18);
-  let n = 0;
-  for (let i = 0; i < due.length; i += 6) {
-    if (timeLeft() < 20000) break;
-    const chunk = due.slice(i, i + 6);
-    try {
-      const res = await ai.resultsEsports(chunk.map((m) => ({ key: m.id, competition: d.leagues[m.league]?.name, home: m.home.name, away: m.away.name, kickoff: m.date })));
-      for (const r of res) { const m = d.matches[r.key]; m.status = 'FINISHED'; m.ft = r.ft; m.ht = r.ht; m.resultSource = 'web'; n++; }
-      for (const m of chunk) if (m.status === 'SCHEDULED') { m.resTries = (m.resTries || 0) + 1; if (m.resTries >= 5 && now - new Date(m.date) > 6 * HOUR) m.status = 'OTHER'; }
-    } catch (e) { if (!e.fatal) for (const m of chunk) m.resTries = (m.resTries || 0) + 1; dbm.log('warn', 'ai-es', e.message); if (e.fatal) break; }
     dbm.save();
   }
   if (n) { settleAll(now); dbm.save(); }
@@ -695,8 +610,9 @@ async function runStep(step, { now = new Date(), budgetMs = 48000 } = {}) {
     } else if (step === 'web') {
       out.found = await addWebMatches(now); await resolveWebResults(now); out.webPicks = await addWebPicks(now);
       out.done = !ai.enabled() || !dbm.data().meta.webCursor;
-    } else if (step === 'esports') {
-      out.resolved = await resolveEsportsResults(now); out.found = await addEsportsMatches(now); out.picks = await addEsportsPicks(now); out.done = true;
+    } else if (step === 'sports') {
+      Object.assign(out, await sports.sync(now, { timeLeft }));
+      out.predicted = sports.predict(now, upsertPrediction); out.settled = settleAll(now); out.done = true;
     } else return { step, done: true, error: 'unknown step' };
     d.meta.aiBlock = ai.getBlock();
     dbm.save();
@@ -708,6 +624,10 @@ async function runStep(step, { now = new Date(), budgetMs = 48000 } = {}) {
 async function run(now = new Date()) {
   resetTriesOnce();
   if (!provider()) {
+    if (sports.cfg() && require('./apisports').enabled()) { // API-Sports alone is enough to run
+      await sports.sync(now); sports.predict(now, upsertPrediction); settleAll(now); dbm.save();
+      return { sports: true, predicted: Object.keys(dbm.data().predictions).length };
+    }
     if (!warnedNoKey) { warnedNoKey = true; dbm.log('warn', 'pipeline', 'FOOTBALL_DATA_KEY is not set: no real data to load.'); }
     return { error: 'FOOTBALL_DATA_KEY not set' };
   }
@@ -724,7 +644,7 @@ async function run(now = new Date()) {
     const researched = await addResearch(now);
     const aiPicks = await addAiPicks(now);
     const webPicks = await addWebPicks(now);
-    await resolveEsportsResults(now); await addEsportsMatches(now); await addEsportsPicks(now);
+    if (require('./apisports').enabled()) { await sports.sync(now); sports.predict(now, upsertPrediction); settleAll(now); }
     await resolveEarly(now);
     dbm.data().meta.lastRun = { at: now.toISOString(), ms: Date.now() - t0, settled, predicted, researched, aiPicks, webFound, webPicks };
     dbm.save();
@@ -744,5 +664,5 @@ function start() {
   setInterval(() => liveTick(), sec * 1000).unref?.();
 }
 
-module.exports = { addEsportsMatches, addEsportsPicks, resolveEsportsResults, runStep, maybeLive, liveTickHosted, predictLive, addWebMatches, addWebPicks, resolveWebResults, webCodes, start, run, liveTick, settleAll, predictAll, addResearch, addAiPicks, resolveEarly, remote, cached, isDemo, leagueCodes, provider, FREE_COMPETITIONS,
+module.exports = { upsertPrediction, runStep, maybeLive, liveTickHosted, predictLive, addWebMatches, addWebPicks, resolveWebResults, webCodes, start, run, liveTick, settleAll, predictAll, addResearch, addAiPicks, resolveEarly, remote, cached, isDemo, leagueCodes, provider, FREE_COMPETITIONS,
   state: () => ({ running, nextRunAt }) };

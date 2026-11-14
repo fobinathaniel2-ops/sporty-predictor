@@ -90,6 +90,7 @@ api.generate = async function generate({ system, user, search = false, json = fa
   try {
     if (!process.env.GEMINI_MODEL && !found.name && Date.now() - found.at > 6 * 3600000) { found.at = Date.now(); try { found.name = (await discoverModel()) || null; } catch { /* use the alias */ } }
     r = await call(model());
+    if ([500, 502, 503, 504].includes(r.status)) { await new Promise((ok) => setTimeout(ok, 2500)); r = await call(model()); } // overloaded: one quick retry
     if (r.status === 404 && !process.env.GEMINI_MODEL) { // retired or not available to this key: look again and retry once
       let next = null; try { next = await discoverModel(); } catch { /* ignore */ }
       if (next && next !== model()) { found.name = next; found.at = Date.now(); r = await call(next); }
@@ -98,6 +99,10 @@ api.generate = async function generate({ system, user, search = false, json = fa
   } catch (e) { throw new AiError(`Gemini request failed: ${e.name === 'AbortError' ? 'timeout' : e.message}`, false); } finally { clearTimeout(timer); }
   if (!r.ok) {
     let detail = '', raw = ''; try { const j = await r.json(); raw = JSON.stringify(j.error || {}); detail = j.error?.message || ''; } catch { /* ignore */ }
+    if ([500, 502, 503, 504].includes(r.status)) { // Google is busy: pause briefly, and do not blame the matches (fatal = stop this run, keep their retry counters)
+      block = { until: Date.now() + 90000, daily: false, reason: 'Google says the model is busy', at: new Date().toISOString() }; u.calls = Math.max(0, u.calls - 1);
+      throw new AiError(`Gemini model busy (HTTP ${r.status}); trying again in about 90 seconds`, true);
+    }
     if (r.status === 429) { noteRateLimit(raw + ' ' + detail, r.headers.get('retry-after')); u.calls = Math.max(0, u.calls - 1); }
     // for a 429, say which quota it is (per minute / per day, which model, free tier or not): that decides the fix
     const quota = r.status === 429 ? ((/"quotaId"\s*:\s*"([^"]+)"/.exec(raw) || [])[1] || '') + ((/"quotaValue"\s*:\s*"([^"]+)"/.exec(raw) || [])[1] ? ` limit ${(/"quotaValue"\s*:\s*"([^"]+)"/.exec(raw) || [])[1]}` : '') : '';
@@ -260,60 +265,6 @@ Reply with a JSON array only: [{"key":"<match key>","finished":true,"home_goals"
 /** items: [{key, competition, home, away, kickoff}] -> [{key, ft:[h,a], ht:[h,a]|null}] for finished matches only */
 api.results = async function results(items) {
   const { text } = await api.generate({ system: RESULTS_SYSTEM, user: items, search: true, maxTokens: 3000, timeoutMs: 90000 });
-  const arr = parseJson(text, 'array');
-  const ok = (n) => Number.isInteger(n) && n >= 0 && n <= 20;
-  const out = [];
-  for (const o of Array.isArray(arr) ? arr : []) {
-    if (!items.some((x) => x.key === o?.key) || o.finished !== true || !ok(o.home_goals) || !ok(o.away_goals)) continue;
-    const ht = ok(o.ht_home) && ok(o.ht_away) && o.ht_home <= o.home_goals && o.ht_away <= o.away_goals ? [o.ht_home, o.ht_away] : null;
-    out.push({ key: o.key, ft: [o.home_goals, o.away_goals], ht });
-  }
-  return out;
-};
-
-/* ------------------------------------------------------------------------------- eFootball / EsportsBattle ----------- */
-
-const discoverEsportsSystem = (names) => `You find upcoming eFootball esports matches (EsportsBattle, virtual football played by real gamers) with Google Search. Look at the official EsportsBattle schedule and other public esports schedules. Search only for the official match schedule (fixtures, dates and kick-off times) on competition, league, club or esports-organiser websites. Do not search for or use betting odds, bookmaker, tipster or gambling pages; this is a fixtures lookup only. List matches in the time range given from these competitions, writing the competition field exactly as spelled here: ${names.join('; ')}. Also include any other eFootball / EsportsBattle competition you find, named "EsportsBattle - <name>".
-Rules: only list matches the search results actually show; never invent teams, players or times; write each side as shown, for example "Barcelona (Nikolay)" (club and the gamer in brackets when the source gives the gamer); kickoff must be an ISO 8601 UTC timestamp: use the time zone the source states and convert it to UTC carefully (EsportsBattle lists times in a stated zone); skip matches whose time or time zone you cannot establish; at most 30 matches, the soonest first.
-Reply with a JSON array only: [{"home":"...","away":"...","competition":"...","kickoff":"2026-01-31T15:00:00Z"}]`;
-
-api.discoverEsports = async function discoverEsports(from, to, names = require('./competitions').ESPORTS) {
-  const { text, sources } = await api.generate({ system: discoverEsportsSystem(names), user: { from, to }, search: true, maxTokens: 6000, timeoutMs: 120000 });
-  const arr = parseJson(text, 'array');
-  const matches = [];
-  for (const o of Array.isArray(arr) ? arr : []) {
-    const home = clean(o?.home, 70), away = clean(o?.away, 70), competition = clean(o?.competition, 70), t = new Date(o?.kickoff);
-    if (!home || !away || !competition || home.toLowerCase() === away.toLowerCase() || isNaN(t)) continue;
-    matches.push({ home, away, competition, country: 'eSports', kickoff: t.toISOString() });
-  }
-  return { matches: matches.slice(0, 40), sources };
-};
-
-const ES_MARKETS = ['1', 'X', '2', '1X', 'X2', '12', 'DNB 1', 'DNB 2', 'Over 3.5', 'Over 4.5', 'Over 5.5', 'Under 4.5', 'Under 5.5', 'Under 6.5', 'BTTS Yes', 'BTTS No', 'Home Over 1.5', 'Away Over 1.5'];
-const ESPICK_SYSTEM = `You are a careful analyst of eFootball esports (EsportsBattle: virtual football, 2 halves of 4 or 6 minutes, played by real gamers who control the club). Each side is a club played by a named gamer. The gamer's recent form matters far more than the real-life club. For each match in the JSON array, search for the two gamers' recent results, goals scored and conceded per match, head-to-head and the tournament's average goals, then choose TWO picks from this fixed list: ${ES_MARKETS.join(', ')}. (1 = home win, X = draw, 2 = away win, 1X / X2 / 12 = double chance, DNB = draw no bet, BTTS = both score.) "pick" is the one most likely to win. "high_pick" is a bolder, less likely prediction you still find supported by the form data, or null. Search only for gamer form and results, never for odds or bookmaker pages.
-Rules: base the picks only on what you actually find; give honest probability estimates (0.20 to 0.95); never invent results; esports results are very random, so say so when the data is thin and prefer a safer market; no pick is guaranteed.
-Reply with a JSON array only: [{"key":"<match key>","pick":"Over 4.5","probability":0.7,"high_pick":"1","high_probability":0.4,"confidence":"Low|Medium","reason":"max 35 words citing what you found"}]`;
-
-api.pickEsports = async function pickEsports(items) {
-  const { text, sources } = await api.generate({ system: ESPICK_SYSTEM, user: items, search: true, maxTokens: 4096, timeoutMs: 120000 });
-  const arr = parseJson(text, 'array');
-  const out = [];
-  for (const o of Array.isArray(arr) ? arr : []) {
-    const pick = clean(o?.pick, 20), p = Number(o?.probability);
-    if (!items.some((x) => x.key === o?.key) || !ES_MARKETS.includes(pick) || !(p >= 0.2 && p <= 0.95)) continue;
-    const hp = clean(o?.high_pick, 20), hpp = Number(o?.high_probability);
-    const high = ES_MARKETS.includes(hp) && hp !== pick && hpp >= 0.15 && hpp < 0.6 ? { pick: hp, p: Math.round(hpp * 100) / 100 } : null;
-    out.push({ key: o.key, pick, p: Math.round(p * 100) / 100, high, confidence: o.confidence === 'Medium' ? 'Medium' : 'Low', reason: clean(o.reason, 300) });
-  }
-  return { picks: out, sources };
-};
-
-const ES_RESULTS_SYSTEM = `You look up final scores of eFootball esports matches (EsportsBattle, virtual football played by gamers) with Google Search. For each match in the JSON array, find the final full-time score of the match (2 halves; include any golden-goal/extra time only if the source counts it in the final score) and the half-time score if shown.
-Rules: only report a score if a reliable source shows the match has finished; otherwise set finished to false; never guess.
-Reply with a JSON array only: [{"key":"<match key>","finished":true,"home_goals":3,"away_goals":2,"ht_home":1,"ht_away":1}] (ht_* may be null)`;
-
-api.resultsEsports = async function resultsEsports(items) {
-  const { text } = await api.generate({ system: ES_RESULTS_SYSTEM, user: items, search: true, maxTokens: 3000, timeoutMs: 90000 });
   const arr = parseJson(text, 'array');
   const ok = (n) => Number.isInteger(n) && n >= 0 && n <= 20;
   const out = [];

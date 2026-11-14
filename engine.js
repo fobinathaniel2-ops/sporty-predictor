@@ -121,6 +121,10 @@ function explain(id, home, away) {
     '2UP Home': `${home} go 2 goals ahead at any point`, '2UP Away': `${away} go 2 goals ahead at any point`,
   };
   if (m[id]) return m[id];
+  const og = id.match(/^(Over|Under) (\d+)\.5$/);
+  if (og) return og[1] === 'Over' ? `At least ${+og[2] + 1} goals` : `Maximum ${og[2]} goals`;
+  const tg = id.match(/^(Home|Away) Over (\d+)\.5$/);
+  if (tg) return `${tg[1] === 'Home' ? home : away} score at least ${+tg[2] + 1} goals`;
   const hf = id.match(/^([12X])\/([12X])$/);
   if (hf) { const w = (c) => (c === '1' ? home : c === '2' ? away : 'draw'); return `Half-time: ${w(hf[1])}. Full-time: ${w(hf[2])}`; }
   return id;

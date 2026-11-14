@@ -40,6 +40,8 @@ export function colorFor(s) { let h = 0; for (const c of String(s)) h = (h * 31 
 export const initials = (n) => String(n || '?').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
 
 export const isEarly = (id) => /^[12]UP /.test(id || '');
+export const BK_GROUPS = ['All', 'Match winner', 'Handicap', 'Total points'];
+export const groupsFor = (game) => (game === 'basketball' ? BK_GROUPS : GROUPS);
 export const GROUPS = ['All', 'Match result', 'Double chance', 'Draw no bet', 'Goals', 'BTTS', 'Team goals', 'Win to nil', 'Half-time', 'HT/FT', 'Early payout'];
 
 export function statusText(m) {
