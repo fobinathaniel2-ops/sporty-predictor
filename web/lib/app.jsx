@@ -51,10 +51,13 @@ export function useApi(url, { poll = 0, enabled = true } = {}) {
 }
 
 /* ----------------------------------------------------------------------------------------------- router ---------- */
+function safeDecode(segment) {
+  try { return decodeURIComponent(segment); } catch { return segment; }
+}
 function parse() {
   const raw = location.hash.replace(/^#/, '') || '/';
   const [p, qs] = raw.split('?');
-  return { path: p.split('/').filter(Boolean).map(decodeURIComponent), query: Object.fromEntries(new URLSearchParams(qs || '')) };
+  return { path: p.split('/').filter(Boolean).map(safeDecode), query: Object.fromEntries(new URLSearchParams(qs || '')) };
 }
 export function useRoute() {
   const [r, setR] = useState(parse);
