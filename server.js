@@ -33,7 +33,10 @@ const isWeb = (code) => !!d().leagues[code]?.web;
 const crestOf = (t) => t.crest || d().teams[t.id]?.crest || null;
 const teamView = (t) => ({ id: t.id, name: t.name, crest: crestOf(t) });
 const KIND_CUP = /Cup|Pokal|Copa|Coppa|Coupe|UEFA|FIFA|CAF |AFC |CONCACAF|Nations|Champions League|Libertadores|Sudamericana|AFCON|Euro/;
-const BK_TOP = [/^NBA$/i, /^EuroLeague$/i, /^EuroCup$/i, /^Liga ACB$|^ACB$/i, /^Lega Basket|^LBA$/i, /^Basketball Bundesliga|^BBL$/i, /^LNB|Betclic Elite|^Pro A$/i, /^Basketball Champions League$/i, /^NBL$/i, /^CBA$/i, /^WNBA$/i, /^NCAA/i, /^G League|^NBA G League/i, /^VTB/i, /^Turkish Basketball Super League|^BSL$/i, /^Greek Basket League|^GBL$/i, /^Adriatic|^ABA League$/i];
+// Top basketball competitions first (matched on the full API-Sports name, which carries the country: "NBA (USA)", "ACB (Spain)").
+const BK_TOP = [/^NBA \(USA\)$/i, /^NCAA \(USA\)$/i, /^EuroLeague|^Euroleague/i, /^EuroCup/i, /^ACB \(Spain\)$/i, /^Lega A \(Italy\)$/i, /^BBL \(Germany\)$/i, /^LNB \(France\)$/i,
+  /^Basketball Champions League/i, /^VTB United League/i, /^Basketbol S[uü]per Ligi/i, /^Basket League \(Greece\)$/i, /^ABA League/i, /^NBL \(Australia\)$/i, /^B League \(Japan\)$/i,
+  /^KBL \(South Korea\)$/i, /^CBA/i, /^WNBA/i, /^NBA - G League/i, /^NBB \(Brazil\)$/i, /^NCAA Women/i];
 const bkOrder = (name) => { const i = BK_TOP.findIndex((r) => r.test(String(name || ''))); return i < 0 ? 500 : i; };
 const leagueView = (code) => {
   const l = d().leagues[code]; const name = l?.name || code; const i = comps.NAMES.indexOf(name);

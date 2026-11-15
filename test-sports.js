@@ -179,7 +179,14 @@ global.fetch = async (url, opt) => {
   const mc = (await get(`/api/match/${bm.id}`)).body;
   assert(mc.markets.map((g) => g.group).join() === 'Match winner,Handicap,Total points' && mc.markets.every((g) => g.items.length), 'basketball market groups');
   assert(mc.match.sport === 'basketball' && mc.match.prediction?.expected?.total > 0, 'match page shows expected points');
+  const D0 = dbm.data(); // a league stored wrongly by an older version is cleaned up, with its matches
+  D0.leagues.AF_9999 = { code: 'AF_9999', name: 'EFL Cup (Carabao Cup)', country: 'Hong-Kong', ext: true, sport: 'football', web: true };
+  D0.matches.af_stale = { id: 'af_stale', league: 'AF_9999', ext: true, date: new Date().toISOString(), home: { id: 'x', name: 'x' }, away: { id: 'y', name: 'y' }, status: 'SCHEDULED' };
+  sports.prune(NOW);
+  assert(!D0.leagues.AF_9999 && !D0.matches.af_stale, 'wrongly mapped league removed with its matches');
   const lg = (await get('/api/leagues')).body; assert(lg.some((l) => l.kind === 'basketball'), 'leagues page lists basketball');
+  const top = lg.filter((l) => l.kind === 'basketball').sort((x, y) => x.order - y.order)[0];
+  assert(top && top.order < 500 || lg.filter((l) => l.kind === 'basketball').every((l) => l.order === 500), 'basketball ordering applied');
   const t = (await get('/api/sports-test')).body;
   assert(t.configured && t.account.body.account.plan === 'Free' && t.football.ok && t.basketball.ok && t.basketball.leagues === 2, 'sports-test page');
   assert.strictEqual((await get('/api/sports-test')).status, 429, 'test page throttled');

@@ -112,6 +112,12 @@ function ingest(items, now, c = cfg()) {
 function prune(now) {
   const d = dbm.data(), cut = +now - 40 * DAY;
   for (const [id, m] of Object.entries(d.matches)) if (m.ext && new Date(m.date) < cut) { delete d.matches[id]; delete d.predictions[id]; }
+  // leagues stored by an earlier version under the wrong country (e.g. Hong Kong's "League Cup" as the EFL Cup) are removed with their matches
+  if (cfg().scope === 'listed') for (const [code, l] of Object.entries(d.leagues)) {
+    if (!l.ext || l.sport === 'basketball' || !code.startsWith('AF_') || listed(l.name, l.country)) continue;
+    for (const [id, m] of Object.entries(d.matches)) if (m.league === code) { delete d.matches[id]; delete d.predictions[id]; }
+    delete d.leagues[code];
+  }
   for (const [code, l] of Object.entries(d.leagues)) if (l.ext && !Object.values(d.matches).some((m) => m.league === code)) delete d.leagues[code];
 }
 
