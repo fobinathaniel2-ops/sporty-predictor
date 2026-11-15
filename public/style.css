@@ -231,3 +231,18 @@ footer.disc{margin-top:40px;padding:18px 0;border-top:1px solid var(--line);colo
 .nitem{display:flex;gap:12px;align-items:flex-start;padding:12px 8px;border-bottom:1px solid var(--line);border-radius:12px}
 .nitem.new{background:rgba(45,255,138,.07)}
 .nico{font-size:20px;line-height:1.2}
+
+/* Accessibility: keep keyboard focus visible across interactive controls. */
+:where(a,button,input,select,textarea,[tabindex]):focus-visible {
+  outline: 2px solid var(--g);
+  outline-offset: 3px;
+}
+.sres a:focus-visible {
+  outline: 2px solid var(--g);
+  outline-offset: -2px;
+}
+@media (forced-colors: active) {
+  :where(a,button,input,select,textarea,[tabindex]):focus-visible {
+    outline: 2px solid Highlight;
+  }
+}
