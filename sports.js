@@ -27,8 +27,8 @@ function meta(now = new Date()) {
   const today = ymd(now);
   if (!m.as) m.as = {};
   const a = m.as;
-  if (a.day !== today) { a.day = today; a.used = { football: 0, basketball: 0 }; a.blocked = {}; } // a new UTC day: fresh budget
-  a.used = a.used || { football: 0, basketball: 0 }; a.blocked = a.blocked || {};
+  if (a.day !== today) { a.day = today; a.used = { football: 0, basketball: 0 }; a.blocked = {}; a.window = {}; } // a new UTC day: fresh budget, and the plan's date window is learnt again
+  a.used = a.used || { football: 0, basketball: 0 }; a.blocked = a.blocked || {}; a.window = a.window || {};
   a.fetched = a.fetched || { football: {}, basketball: {} };
   a.stats = a.stats || { football: {}, basketball: {} };
   return a;
@@ -45,7 +45,8 @@ function planDates(sport, now, a, c = cfg()) {
   const out = [];
   const age = (d) => (fetched[d] ? now - new Date(fetched[d].at) : Infinity);
   const final = (d) => fetched[d] && new Date(fetched[d].at) >= dayStart(d) + DAY + 3 * HOUR;
-  const add = (offset, prio, ok) => { const d = ymd(dayStart(today) + offset * DAY); if (ok(d)) out.push({ date: d, prio: prio + (offset > 0 ? offset : -offset) / 100 }); };
+  const win = (a.window || {})[sport]; // dates the plan allows, learnt from API-Sports' own error message
+  const add = (offset, prio, ok) => { const d = ymd(dayStart(today) + offset * DAY); if (win && (d < win.from || d > win.to)) return; if (ok(d)) out.push({ date: d, prio: prio + (offset > 0 ? offset : -offset) / 100 }); };
   add(0, 0, (d) => age(d) > c.todayMin * 60000);
   add(-1, 1, (d) => !final(d));
   add(1, 2, (d) => age(d) > c.tomorrowH * HOUR);
@@ -131,6 +132,7 @@ async function sync(now = new Date(), { timeLeft = () => Infinity } = {}) {
     if (blockedUntil && now < new Date(blockedUntil)) { res.blocked = `paused until ${blockedUntil}: ${st.lastError || ''}`; continue; }
     const plan = planDates(sport, now, a, c);
     for (const { date } of plan.slice(0, c.perRun)) {
+      const wn = a.window[sport]; if (wn && (date < wn.from || date > wn.to)) continue;
       if (a.used[sport] >= c.cap) { res.errors.push(`daily budget of ${c.cap} requests reached`); break; }
       if (timeLeft() < 8000) break;
       const t0 = Date.now();
@@ -143,6 +145,13 @@ async function sync(now = new Date(), { timeLeft = () => Infinity } = {}) {
         Object.assign(st, { lastOkAt: now.toISOString(), lastDurationMs: Date.now() - t0, remaining: r.remaining, limit: r.limit, lastRows: r.total, lastKept: k.added + k.updated });
         if (r.remaining !== null && r.remaining <= 2) { a.blocked[sport] = new Date(+now + HOUR).toISOString(); st.lastError = 'API-Sports daily quota nearly used up'; break; }
       } catch (e) {
+        const w = e.kind === 'plan' && /(\d{4}-\d{2}-\d{2})\s+to\s+(\d{4}-\d{2}-\d{2})/.exec(e.message);
+        if (w) { // the plan only serves some dates: remember them and carry on with the allowed ones, no pause
+          a.window[sport] = { from: w[1], to: w[2] };
+          Object.assign(st, { lastErrorAt: now.toISOString(), lastError: e.message, lastErrorKind: 'plan', planWindow: a.window[sport] });
+          dbm.log('info', 'sports', `${sport}: plan serves only ${w[1]} to ${w[2]}`);
+          continue;
+        }
         const mins = e.kind === 'key' ? 30 : e.kind === 'plan' ? 60 : e.kind === 'quota' ? Math.ceil((dayStart(ymd(+now + DAY)) - now) / 60000) : 5;
         a.blocked[sport] = new Date(+now + mins * 60000).toISOString();
         Object.assign(st, { lastErrorAt: now.toISOString(), lastError: e.message, lastErrorKind: e.kind || 'error' });

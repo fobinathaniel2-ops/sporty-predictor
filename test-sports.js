@@ -151,7 +151,14 @@ global.fetch = async (url, opt) => {
   failWith = { status: 200, ok: true, headers: { get: () => null }, json: async () => ({ errors: { plan: 'Free plans do not have access to this season, try from 2021 to 2023.' }, response: [] }) };
   sports.meta(sim).blocked = {}; const pl = await sports.sync(sim);
   assert(/do not have access to this season/.test(pl.football.errors[0]) && sports.meta(sim).stats.football.lastErrorKind === 'plan', 'plan error recognised');
-  failWith = null;
+  // a plan that only serves a few dates: learn the window, skip the rest, do NOT pause the sport
+  failWith = { status: 200, ok: true, headers: { get: () => null }, json: async () => ({ errors: { plan: 'Free plans do not have access to this date, try from 2026-11-13 to 2026-11-15.' }, response: [] }) };
+  { const m = sports.meta(sim); m.blocked = {}; m.window = {}; m.fetched.football = {}; }
+  const wn = await sports.sync(sim);
+  assert.deepStrictEqual(sports.meta(sim).window.football, { from: '2026-11-13', to: '2026-11-15' }, 'date window learnt');
+  assert(!sports.status(sim).football.pausedUntil, 'a date-window error does not pause the sport');
+  assert(sports.planDates('football', NOW, sports.meta(sim)).every((x) => x.date >= '2026-11-13' && x.date <= '2026-11-15'), 'dates outside the plan window are not planned');
+  failWith = null; sports.meta(sim).window = {};
 
   // ---- 7. the HTTP API: no football-data key, no Gemini ----
   const { server } = require('./server');
