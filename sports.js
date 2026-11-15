@@ -54,12 +54,31 @@ function planDates(sport, now, a, c = cfg()) {
   return out.sort((x, y) => x.prio - y.prio);
 }
 
+/** Where each national competition on the list is played. API-Sports names are not unique ("League Cup" exists in many countries). */
+const WHERE = {
+  'English Premier League': /^england$/i, 'English Championship': /^england$/i, 'FA Cup': /^england$/i, 'EFL Cup (Carabao Cup)': /^england$/i,
+  'Spanish La Liga': /^spain$/i, 'Copa del Rey': /^spain$/i, 'Italian Serie A': /^italy$/i, 'Coppa Italia': /^italy$/i,
+  'German Bundesliga': /^germany$/i, 'DFB-Pokal': /^germany$/i, 'French Ligue 1': /^france$/i, 'Coupe de France': /^france$/i,
+  'Portuguese Primeira Liga': /^portugal$/i, 'Dutch Eredivisie': /^netherlands$/i, 'KNVB Cup': /^netherlands$/i, 'Belgian Pro League': /^belgium$/i,
+  'Scottish Premiership': /^scotland$/i, 'Ghana Premier League': /^ghana$/i, 'Nigeria Premier Football League': /^nigeria$/i,
+  'South African Premiership': /^south-?africa$/i, 'Egyptian Premier League': /^egypt$/i, 'Moroccan Botola Pro': /^morocco$/i,
+  'Saudi Pro League': /^saudi-?arabia$/i, 'Major League Soccer (MLS)': /^(usa|united-?states)$/i, 'Brazilian Série A': /^brazil$/i, 'Argentine Primera División': /^argentina$/i,
+};
+const INTERNATIONAL = /^(world|europe|africa|asia|south-?america|north-america|central-america|oceania|international)$/i;
+/** The list entry for an API-Sports league, or null when the name matches but the country does not. */
+function listed(name, country) {
+  const canon = comps.canonical(name, country);
+  const entry = canon && (canon.name ? canon : comps.LIST.find((c) => c.name === canon));
+  if (!entry) return null;
+  const ok = WHERE[entry.name] ? WHERE[entry.name].test(String(country || '').trim()) : INTERNATIONAL.test(String(country || '').trim());
+  return ok ? entry.name : null;
+}
+
 /** League for a fetched row, or null when this app should not keep it. */
 function leagueFor(item, c, d) {
   const L = item.league;
   if (item.sport === 'football') {
-    const canon = comps.canonical(L.name, L.country);
-    const canonName = canon && (canon.name || canon);
+    const canonName = listed(L.name, L.country);
     if (c.scope === 'listed' && !canonName) return { skip: 'not on the competition list' };
     const name = canonName || (L.country && !/^world$/i.test(L.country) ? `${L.name} (${L.country})` : L.name);
     // competitions the football-data.org feed already covers are left to it, so nothing appears twice
@@ -210,4 +229,4 @@ function status(now = new Date()) {
   return { configured: api.enabled(), scope: c.scope, football: per('football'), basketball: per('basketball') };
 }
 
-module.exports = { sync, predict, planDates, ingest, leagueFor, status, meta, cfg, prune, SPORTS };
+module.exports = { listed, sync, predict, planDates, ingest, leagueFor, status, meta, cfg, prune, SPORTS };

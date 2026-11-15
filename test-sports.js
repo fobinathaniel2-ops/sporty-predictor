@@ -4,6 +4,7 @@ process.env.DATA_DIR = require('os').tmpdir() + '/sp-sports-' + process.pid;
 process.env.API_SPORTS_KEY = 'test-key';
 delete process.env.FOOTBALL_DATA_KEY; delete process.env.GEMINI_API_KEY; delete process.env.DEMO_MODE;
 process.env.AS_PER_RUN = '40'; process.env.AS_BACKFILL_DAYS = '30'; process.env.AS_DAYS_AHEAD = '3'; process.env.AS_DAILY_CAP = '90';
+try { require('fs').rmSync(process.env.DATA_DIR, { recursive: true, force: true }); } catch {}
 const assert = require('assert');
 const dbm = require('./db'); dbm.load();
 const bk = require('./basketball');
@@ -79,6 +80,16 @@ global.fetch = async (url, opt) => {
   assert.strictEqual(plan[2], '2026-11-15', 'then tomorrow');
   assert(plan.includes('2026-10-16') && plan.length === 1 + 1 + 1 + 2 + 29, `history to 30 days back: ${plan.length}`);
 
+  // ---- 1b. API-Sports league names are not unique: the country must match ----
+  assert.strictEqual(sports.listed('League Cup', 'England'), 'EFL Cup (Carabao Cup)');
+  assert.strictEqual(sports.listed('League Cup', 'Hong-Kong'), null, 'Hong Kong League Cup is not the Carabao Cup');
+  assert.strictEqual(sports.listed('Premier League', 'Ghana'), 'Ghana Premier League');
+  assert.strictEqual(sports.listed('Premier League', 'Egypt'), 'Egyptian Premier League');
+  assert.strictEqual(sports.listed('Bundesliga', 'Austria'), null, 'Austrian Bundesliga is not the German one');
+  assert.strictEqual(sports.listed('UEFA Nations League', 'World'), 'UEFA Nations League');
+  assert.strictEqual(sports.listed('UEFA Champions League', 'World'), 'UEFA Champions League');
+  assert.strictEqual(sports.listed('Super Cup', 'Austria'), null);
+
   // ---- 2. sync works with NO FOOTBALL_DATA_KEY and no Gemini ----
   assert(!pipeline.provider(), 'no football-data provider');
   const r = await sports.sync(NOW);
@@ -148,7 +159,7 @@ global.fetch = async (url, opt) => {
   const base = `http://localhost:${server.address().port}`;
   const get = async (p) => { const x = await fetch(base + p, { headers: { 'x-forwarded-for': '9.9.9.9' } }); return { status: x.status, body: await x.json().catch(() => null) }; };
   dbm.data().meta.as.blocked = {};
-  const status = (await get('/api/status')).body;
+  const status = (await get('/api/status')).body; if (!status || status.configured === undefined) console.log('STATUS RAW', JSON.stringify(status).slice(0,300));
   assert(status.configured && status.provider === 'api-sports.io', 'configured with API-Sports alone');
   assert(status.sports.basketball.leagues === 2 && status.sports.football.matches > 0 && status.sports.basketball.datesFetched > 0, 'status shows both sports ' + JSON.stringify(status.sports));
   assert(status.sports.football.lastError && status.sports.football.pausedUntil === null || true);

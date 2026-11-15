@@ -4,6 +4,7 @@ process.env.DATA_DIR = require('os').tmpdir() + '/sp-test-' + process.pid;
 process.env.DEMO_MODE = '1';
 process.env.GEMINI_API_KEY = 'test-key';
 process.env.AI_DELAY_MS = '0';
+try { require('fs').rmSync(process.env.DATA_DIR, { recursive: true, force: true }); } catch {}
 const assert = require('assert');
 const dbm = require('./db'); dbm.load();
 const ai = require('./ai');

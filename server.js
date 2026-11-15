@@ -33,9 +33,11 @@ const isWeb = (code) => !!d().leagues[code]?.web;
 const crestOf = (t) => t.crest || d().teams[t.id]?.crest || null;
 const teamView = (t) => ({ id: t.id, name: t.name, crest: crestOf(t) });
 const KIND_CUP = /Cup|Pokal|Copa|Coppa|Coupe|UEFA|FIFA|CAF |AFC |CONCACAF|Nations|Champions League|Libertadores|Sudamericana|AFCON|Euro/;
+const BK_TOP = [/^NBA$/i, /^EuroLeague$/i, /^EuroCup$/i, /^Liga ACB$|^ACB$/i, /^Lega Basket|^LBA$/i, /^Basketball Bundesliga|^BBL$/i, /^LNB|Betclic Elite|^Pro A$/i, /^Basketball Champions League$/i, /^NBL$/i, /^CBA$/i, /^WNBA$/i, /^NCAA/i, /^G League|^NBA G League/i, /^VTB/i, /^Turkish Basketball Super League|^BSL$/i, /^Greek Basket League|^GBL$/i, /^Adriatic|^ABA League$/i];
+const bkOrder = (name) => { const i = BK_TOP.findIndex((r) => r.test(String(name || ''))); return i < 0 ? 500 : i; };
 const leagueView = (code) => {
   const l = d().leagues[code]; const name = l?.name || code; const i = comps.NAMES.indexOf(name);
-  return { code, name, country: l?.country || '', emblem: l?.emblem || null, demo: !!l?.demo, web: !!l?.web, order: i < 0 ? 999 : i, kind: l?.sport === 'basketball' ? 'basketball' : KIND_CUP.test(name) && !/Premier League|Pro League|Primeira|Premiership/.test(name) ? 'cup' : 'league' };
+  return { code, name, country: l?.country || '', emblem: l?.emblem || null, demo: !!l?.demo, web: !!l?.web, order: l?.sport === 'basketball' ? bkOrder(name) : i < 0 ? 999 : i, kind: l?.sport === 'basketball' ? 'basketball' : KIND_CUP.test(name) && !/Premier League|Pro League|Primeira|Premiership/.test(name) ? 'cup' : 'league' };
 };
 
 function predView(p, full) {

@@ -1,6 +1,7 @@
 'use strict';
 // Notifications: events, filters, Web Push encryption (decrypted the way a browser would), delivery, routes.
 process.env.DATA_DIR = '/tmp/sp-notify-test-' + process.pid; process.env.PUSH_ALLOW_ANY = '1'; process.env.DEMO_MODE = '1';
+try { require('fs').rmSync(process.env.DATA_DIR, { recursive: true, force: true }); } catch {}
 const assert = require('assert'); const crypto = require('crypto'); const http = require('http');
 const dbm = require('./db'); dbm.load();
 const notify = require('./notify');
