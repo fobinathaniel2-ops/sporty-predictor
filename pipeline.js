@@ -309,7 +309,11 @@ function predictLive(now = new Date()) {
 const normName = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
   .replace(/\b(fc|cf|afc|sc|ac|as|ssc|fk|sk|bk|cd|ud|sv|vfb|vfl|rcd|us|club|de|the|real|calcio)\b/g, ' ').replace(/[^a-z0-9]/g, '');
 const slug = (s) => String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-const webCodes = () => Object.keys(dbm.data().leagues).filter((c) => dbm.data().leagues[c].web && Object.values(dbm.data().matches).some((m) => m.league === c));
+const webCodes = () => { // one pass over the matches (was one pass per league)
+  const d = dbm.data(), has = new Set();
+  for (const k in d.matches) has.add(d.matches[k].league);
+  return Object.keys(d.leagues).filter((c) => d.leagues[c].web && has.has(c));
+};
 
 function knownTeam(name) {
   const k = normName(name);

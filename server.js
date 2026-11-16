@@ -25,7 +25,9 @@ const MIME = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=u
 
 class HttpError extends Error { constructor(code, msg) { super(msg); this.code = code; } }
 const d = () => dbm.data();
-const active = () => [...pipeline.leagueCodes(), ...pipeline.webCodes()];
+// The active competitions are worked out once per request (it scans the matches), then reused for every match.
+let activeMemo = null;
+const active = () => (activeMemo ? activeMemo.list : (activeMemo = (() => { const list = [...pipeline.leagueCodes(), ...pipeline.webCodes()]; return { list, set: new Set(list) }; })()).list);
 const isWeb = (code) => !!d().leagues[code]?.web;
 
 /* ----------------------------------------------------------------------------------------------------- views ------- */
@@ -37,7 +39,8 @@ const KIND_CUP = /Cup|Pokal|Copa|Coppa|Coupe|UEFA|FIFA|CAF |AFC |CONCACAF|Nation
 const BK_TOP = [/^NBA \(USA\)$/i, /^NCAA \(USA\)$/i, /^EuroLeague|^Euroleague/i, /^EuroCup/i, /^ACB \(Spain\)$/i, /^Lega A \(Italy\)$/i, /^BBL \(Germany\)$/i, /^LNB \(France\)$/i,
   /^Basketball Champions League/i, /^VTB United League/i, /^Basketbol S[uü]per Ligi/i, /^Basket League \(Greece\)$/i, /^ABA League/i, /^NBL \(Australia\)$/i, /^B League \(Japan\)$/i,
   /^KBL \(South Korea\)$/i, /^CBA/i, /^WNBA/i, /^NBA - G League/i, /^NBB \(Brazil\)$/i, /^NCAA Women/i];
-const bkOrder = (name) => { const i = BK_TOP.findIndex((r) => r.test(String(name || ''))); return i < 0 ? 500 : i; };
+const bkOrderMemo = new Map();
+const bkOrder = (name) => { let v = bkOrderMemo.get(name); if (v === undefined) { const i = BK_TOP.findIndex((r) => r.test(String(name || ''))); v = i < 0 ? 500 : i; bkOrderMemo.set(name, v); } return v; };
 const leagueView = (code) => {
   const l = d().leagues[code]; const name = l?.name || code; const i = comps.NAMES.indexOf(name);
   return { code, name, country: l?.country || '', emblem: l?.emblem || null, demo: !!l?.demo, web: !!l?.web, order: l?.sport === 'basketball' ? bkOrder(name) : i < 0 ? 999 : i, kind: l?.sport === 'basketball' ? 'basketball' : KIND_CUP.test(name) && !/Premier League|Pro League|Primeira|Premiership/.test(name) ? 'cup' : 'league' };
@@ -67,7 +70,7 @@ function matchView(m, full) {
 }
 
 const byDate = (a, b) => new Date(a.date) - new Date(b.date);
-const inCodes = (m) => active().includes(m.league);
+const inCodes = (m) => { active(); return activeMemo.set.has(m.league); };
 
 /* --------------------------------------------------------------------------------------------------- guards -------- */
 
@@ -89,13 +92,14 @@ const route = (method, re, fn) => routes.push({ method, re, fn });
 /** Every competition on the list (feed, web-found and eFootball), even those with no matches yet, so the filters always show them. */
 function competitionList() {
   const dd = d(); const have = new Map(); const out = [];
-  for (const c of active()) if (dd.leagues[c]) { const v = leagueView(c); have.set(v.name, true); out.push({ ...v, matches: Object.values(dd.matches).filter((m) => m.league === c).length }); }
+  const count = {}; for (const k in dd.matches) count[dd.matches[k].league] = (count[dd.matches[k].league] || 0) + 1;
+  for (const c of active()) if (dd.leagues[c]) { const v = leagueView(c); have.set(v.name, true); out.push({ ...v, matches: count[c] || 0 }); }
   comps.LIST.forEach((c, i) => { if (!have.has(c.name)) out.push({ code: comps.webCode(c.name), name: c.name, country: '', emblem: null, demo: false, web: true, order: i, kind: KIND_CUP.test(c.name) && !/Premier League|Pro League|Primeira|Premiership/.test(c.name) ? 'cup' : 'league', matches: 0 }); });
   return out.sort((a, b) => a.order - b.order);
 }
 route('GET', /^\/api\/status$/, () => {
   const dd = d(); const codes = active(); const st = pipeline.state(); const prov = pipeline.provider();
-  const live = Object.values(dd.matches).filter((m) => m.status === 'LIVE' && codes.includes(m.league)).length;
+  const live = Object.values(dd.matches).filter((m) => m.status === 'LIVE' && inCodes(m)).length;
   return {
     configured: !!prov || apisports.enabled(), provider: prov?.name || (apisports.enabled() ? 'api-sports.io' : null), demo: pipeline.isDemo(),
     ai: { enabled: ai.enabled(), provider: 'Gemini', model: ai.enabled() ? ai.model() : null, usage: ai.enabled() ? ai.usage() : null },
@@ -104,7 +108,7 @@ route('GET', /^\/api\/status$/, () => {
     sports: sports.status(),
     lastRun: dd.meta.lastRun || null, running: st.running, nextRunAt: st.nextRunAt,
     counts: {
-      live, upcoming: Object.values(dd.matches).filter((m) => m.status === 'SCHEDULED' && codes.includes(m.league)).length,
+      live, upcoming: Object.values(dd.matches).filter((m) => m.status === 'SCHEDULED' && inCodes(m)).length,
       predictions: Object.keys(dd.predictions).length, verified: Object.values(dd.predictions).filter((p) => p.settled && !p.void).length,
     },
     lastError: dd.apiLogs.find((l) => l.level === 'error')?.message || null,
@@ -157,12 +161,15 @@ route('GET', /^\/api\/dashboard$/, (req, res, p, q) => {
 
 route('GET', /^\/api\/leagues$/, () => {
   const now = Date.now(); const dd = d();
-  return active().filter((c) => dd.leagues[c]).map((c) => {
-    const ms = Object.values(dd.matches).filter((m) => m.league === c);
-    const ids = new Set(); ms.forEach((m) => { ids.add(m.home.id); ids.add(m.away.id); });
-    return { ...leagueView(c), teams: ids.size, live: ms.filter((m) => m.status === 'LIVE').length,
-      next7: ms.filter((m) => m.status === 'SCHEDULED' && new Date(m.date) > now && new Date(m.date) - now < 7 * DAY).length };
-  });
+  const codes = active().filter((c) => dd.leagues[c]);
+  const agg = new Map(codes.map((c) => [c, { ids: new Set(), live: 0, next7: 0 }]));
+  for (const k in dd.matches) { // one pass over all matches
+    const m = dd.matches[k], a = agg.get(m.league); if (!a) continue;
+    a.ids.add(m.home.id); a.ids.add(m.away.id);
+    if (m.status === 'LIVE') a.live++;
+    else if (m.status === 'SCHEDULED') { const t = new Date(m.date) - now; if (t > 0 && t < 7 * DAY) a.next7++; }
+  }
+  return codes.map((c) => { const a = agg.get(c); return { ...leagueView(c), teams: a.ids.size, live: a.live, next7: a.next7 }; });
 });
 
 /** Standings: provider table when available, otherwise computed from the stored results. */
@@ -307,7 +314,7 @@ route('GET', /^\/api\/analysis\/([\w-]+)$/, async (req, res, [id], q) => {
 route('GET', /^\/api\/analyst$/, () => {
   const now = Date.now(); const dd = d();
   const list = Object.values(dd.predictions)
-    .filter((x) => !x.settled && !x.locked && new Date(x.kickoff) > now && dd.matches[x.matchId] && active().includes(x.league))
+    .filter((x) => !x.settled && !x.locked && new Date(x.kickoff) > now && dd.matches[x.matchId] && (active(), activeMemo.set.has(x.league)))
     .sort((a, b) => new Date(a.kickoff) - new Date(b.kickoff)).slice(0, 80)
     .map((x) => matchView(dd.matches[x.matchId]));
   return { picks: list };
@@ -489,6 +496,7 @@ async function handle(req, res) {
         await dbm.hydrate({ maxAge: pathname === '/api/cron' ? 0 : 20000 });
         if (LIVE_PATHS.test(pathname) && req.method === 'GET') await pipeline.maybeLive();
       }
+      activeMemo = null; // fresh data for this request
       for (const r of routes) {
         if (r.method !== req.method) continue;
         const mt = pathname.match(r.re);
