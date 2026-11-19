@@ -7,9 +7,25 @@ export const dayKey = (d) => `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.
 export const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
 export const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
 
-export const fmtTime = (iso, prefs) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: prefs?.timeFormat === '12h' });
-export const fmtDate = (iso) => new Date(iso).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' });
-export const fmtLong = (iso, prefs) => `${new Date(iso).toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long' })} · ${fmtTime(iso, prefs)}`;
+// Personal display settings live here so every formatter sees them (set by AppProvider).
+const FMT = { tz: 'auto', odds: 'decimal', hour12: false };
+export function setFormat(prefs) { FMT.tz = prefs?.tz || 'auto'; FMT.odds = prefs?.oddsFormat || 'decimal'; FMT.hour12 = prefs?.timeFormat === '12h'; }
+const zone = () => (FMT.tz && FMT.tz !== 'auto' ? { timeZone: FMT.tz } : {});
+const safe = (fn) => { try { return fn(zone()); } catch (e) { return fn({}); } };
+export const fmtTime = (iso, prefs) => safe((z) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: prefs ? prefs.timeFormat === '12h' : FMT.hour12, ...z }));
+export const fmtDate = (iso) => safe((z) => new Date(iso).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short', ...z }));
+export const fmtLong = (iso, prefs) => `${safe((z) => new Date(iso).toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long', ...z }))} · ${fmtTime(iso, prefs)}`;
+
+// Fair odds (1 / probability) shown as decimal or fractional. Not bookmaker odds.
+const FRACS = [[1, 10], [1, 8], [1, 6], [1, 5], [1, 4], [2, 7], [1, 3], [4, 11], [2, 5], [4, 9], [1, 2], [8, 15], [4, 7], [8, 13], [4, 6], [8, 11], [5, 6], [10, 11], [1, 1], [11, 10], [6, 5], [5, 4], [11, 8], [6, 4], [13, 8], [7, 4], [15, 8], [2, 1], [9, 4], [5, 2], [11, 4], [3, 1], [7, 2], [4, 1], [9, 2], [5, 1], [6, 1], [7, 1], [8, 1], [9, 1], [10, 1], [12, 1], [14, 1], [16, 1], [20, 1], [25, 1], [33, 1]];
+export function fmtOdds(dec) {
+  if (!(dec > 1)) return '–';
+  if (FMT.odds !== 'fractional') return dec.toFixed(2);
+  const x = dec - 1;
+  let best = FRACS[0], bd = Infinity;
+  for (const f of FRACS) { const dist = Math.abs(f[0] / f[1] - x) / x; if (dist < bd) { bd = dist; best = f; } }
+  return `${best[0]}/${best[1]}`;
+}
 
 export function relDay(iso) {
   const t = startOfDay(new Date()), d = startOfDay(new Date(iso));
@@ -40,9 +56,8 @@ export function colorFor(s) { let h = 0; for (const c of String(s)) h = (h * 31 
 export const initials = (n) => String(n || '?').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
 
 export const isEarly = (id) => /^[12]UP /.test(id || '');
-export const BK_GROUPS = ['All', 'Match winner', 'Handicap', 'Total points'];
-export const groupsFor = (game) => (game === 'basketball' ? BK_GROUPS : GROUPS);
-export const GROUPS = ['All', 'Match result', 'Double chance', 'Draw no bet', 'Goals', 'BTTS', 'Team goals', 'Win to nil', 'Half-time', 'HT/FT', 'Early payout'];
+export const groupsFor = () => GROUPS;
+export const GROUPS = ['All', 'Match result', 'Double chance', 'Draw no bet', 'Goals', 'BTTS', 'Correct score', 'Team goals', 'Win to nil', 'Half-time', 'HT/FT', 'Early payout'];
 
 export function statusText(m) {
   if (m.status === 'LIVE') return m.minute ? `${m.minute}'` : 'LIVE';

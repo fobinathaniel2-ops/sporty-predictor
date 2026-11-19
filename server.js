@@ -12,7 +12,6 @@ const engine = require('./engine');
 const stats = require('./stats');
 const comps = require('./competitions');
 const sports = require('./sports');
-const bk = require('./basketball');
 const apisports = require('./apisports');
 const analysisMod = require('./analysis');
 const notify = require('./notify');
@@ -35,15 +34,9 @@ const isWeb = (code) => !!d().leagues[code]?.web;
 const crestOf = (t) => t.crest || d().teams[t.id]?.crest || null;
 const teamView = (t) => ({ id: t.id, name: t.name, crest: crestOf(t) });
 const KIND_CUP = /Cup|Pokal|Copa|Coppa|Coupe|UEFA|FIFA|CAF |AFC |CONCACAF|Nations|Champions League|Libertadores|Sudamericana|AFCON|Euro/;
-// Top basketball competitions first (matched on the full API-Sports name, which carries the country: "NBA (USA)", "ACB (Spain)").
-const BK_TOP = [/^NBA \(USA\)$/i, /^NCAA \(USA\)$/i, /^EuroLeague|^Euroleague/i, /^EuroCup/i, /^ACB \(Spain\)$/i, /^Lega A \(Italy\)$/i, /^BBL \(Germany\)$/i, /^LNB \(France\)$/i,
-  /^Basketball Champions League/i, /^VTB United League/i, /^Basketbol S[uü]per Ligi/i, /^Basket League \(Greece\)$/i, /^ABA League/i, /^NBL \(Australia\)$/i, /^B League \(Japan\)$/i,
-  /^KBL \(South Korea\)$/i, /^CBA/i, /^WNBA/i, /^NBA - G League/i, /^NBB \(Brazil\)$/i, /^NCAA Women/i];
-const bkOrderMemo = new Map();
-const bkOrder = (name) => { let v = bkOrderMemo.get(name); if (v === undefined) { const i = BK_TOP.findIndex((r) => r.test(String(name || ''))); v = i < 0 ? 500 : i; bkOrderMemo.set(name, v); } return v; };
 const leagueView = (code) => {
   const l = d().leagues[code]; const name = l?.name || code; const i = comps.NAMES.indexOf(name);
-  return { code, name, country: l?.country || '', emblem: l?.emblem || null, demo: !!l?.demo, web: !!l?.web, order: l?.sport === 'basketball' ? bkOrder(name) : i < 0 ? 999 : i, kind: l?.sport === 'basketball' ? 'basketball' : KIND_CUP.test(name) && !/Premier League|Pro League|Primeira|Premiership/.test(name) ? 'cup' : 'league' };
+  return { code, name, country: l?.country || '', emblem: l?.emblem || null, demo: !!l?.demo, web: !!l?.web, order: i < 0 ? 999 : i, kind: KIND_CUP.test(name) && !/Premier League|Pro League|Primeira|Premiership/.test(name) ? 'cup' : 'league' };
 };
 
 function predView(p, full) {
@@ -51,7 +44,7 @@ function predView(p, full) {
   const o = {
     best: p.best, high: p.high || null, statsBest: p.statsBest && { id: p.statsBest.id, label: p.statsBest.label, p: p.statsBest.p, correct: p.statsBest.correct },
     confidence: p.confidence, locked: p.locked, settled: p.settled, void: !!p.void,
-    probs: p.pm['1'] !== undefined && p.pm.X !== undefined ? { home: p.pm['1'], draw: p.pm.X, away: p.pm['2'] } : null, twoWay: p.sport === 'basketball' && p.pm['1'] !== undefined ? { home: p.pm['1'], away: p.pm['2'] } : null, hasNotes: !!p.research?.notes?.length,
+    probs: p.pm['1'] !== undefined && p.pm.X !== undefined ? { home: p.pm['1'], draw: p.pm.X, away: p.pm['2'] } : null, hasNotes: !!p.research?.notes?.length,
     sport: p.sport || 'football', kind: p.late ? 'live' : p.web ? 'web' : 'pre', inplay: p.inplay || null, webNote: p.webNote || null, liveAt: p.liveAt || null,
   };
   if (full) {
@@ -117,6 +110,28 @@ route('GET', /^\/api\/status$/, () => {
     recent: dd.apiLogs.filter((l) => l.level !== 'info' || l.source === 'ai-web').slice(0, 6).map((l) => `${l.at.slice(11, 16)} ${l.source}: ${l.message}`),
   };
 });
+
+/** One screen for the owner: is every part working? Cheap (no outside calls). */
+route('GET', /^\/api\/health$/, () => {
+  const dd = d(), now = Date.now(), run = dd.meta.lastRun || null, ageMin = (iso) => (iso ? Math.round((now - new Date(iso)) / 60000) : null);
+  const sp = sports.status(), u = ai.enabled() ? ai.usage() : null, prov = pipeline.provider();
+  const level = (ok, warn) => (ok ? 'ok' : warn ? 'warn' : 'bad');
+  const lastRunAge = ageMin(run?.at);
+  const checks = [
+    { key: 'storage', name: 'Storage', level: 'ok', detail: dbm.mode() === 'remote' ? 'Hosted (Upstash Redis)' : 'Local files', meta: { mode: dbm.mode() } },
+    { key: 'football-data', name: 'football-data.org', level: level(!!prov, !prov), detail: prov ? `Connected (${prov.name})` : 'No key set (optional when API-Sports is used)' },
+    { key: 'api-sports', name: 'API-Sports', level: !sp.configured ? 'warn' : sp.football?.pausedUntil ? 'warn' : sp.football?.lastErrorKind === 'key' ? 'bad' : 'ok',
+      detail: !sp.configured ? 'No API_SPORTS_KEY set' : sp.football?.pausedUntil ? `Paused until ${sp.football.pausedUntil.slice(11, 16)} UTC: ${sp.football.lastError || ''}`.trim() : `${sp.football?.used ?? 0} of ${sp.football?.cap ?? 0} requests used today`, quota: sp.configured ? { used: sp.football?.used, cap: sp.football?.cap, remaining: sp.football?.remaining, limit: sp.football?.limit } : null },
+    { key: 'gemini', name: 'Gemini', level: !ai.enabled() ? 'warn' : u?.blockedUntil ? 'warn' : 'ok',
+      detail: !ai.enabled() ? 'No GEMINI_API_KEY set' : u?.blockedUntil ? `Paused until ${String(u.blockedUntil).slice(11, 16)} UTC: ${u.blockedReason || ''}`.trim() : `${u?.calls ?? 0} of ${u?.cap ?? 0} calls used today`, quota: u ? { used: u.calls, cap: u.cap } : null },
+    { key: 'scheduler', name: 'Scheduled updates', level: lastRunAge == null ? 'warn' : lastRunAge > 180 ? 'bad' : lastRunAge > 75 ? 'warn' : 'ok',
+      detail: lastRunAge == null ? 'No run recorded yet' : `Last run ${lastRunAge} minutes ago (${run.predicted ?? 0} picks made)` },
+  ];
+  const errors = dd.apiLogs.filter((l) => l.level === 'error').slice(0, 5).map((l) => ({ at: l.at, source: l.source, message: String(l.message).slice(0, 200) }));
+  return { at: new Date().toISOString(), version: require('./package.json').version, overall: checks.some((c) => c.level === 'bad') ? 'bad' : checks.some((c) => c.level === 'warn') ? 'warn' : 'ok',
+    checks, counts: { matches: Object.keys(dd.matches).length, predictions: Object.keys(dd.predictions).length, leagues: Object.keys(dd.leagues).length, teams: Object.keys(dd.teams).length }, errors };
+});
+
 
 function range(q) {
   const from = new Date(q.from), to = new Date(q.to);
@@ -255,23 +270,24 @@ route('GET', /^\/api\/match\/([\w-]+)$/, async (req, res, [id]) => {
   const p = d().predictions[id];
   let detail = null, detailNote = null, stale = false;
   const near = m.status === 'LIVE' || m.status === 'FINISHED' || new Date(m.date) - Date.now() < 2 * HOUR;
-  if (m.ext) detailNote = m.sport === 'basketball' ? 'Quarter scores appear after the game.' : 'Lineups and match statistics are not loaded for this competition.';
+  if (m.ext) detailNote = 'Lineups and match statistics are not loaded for this competition.';
   else if (!pipeline.provider()) detailNote = 'No data source configured.';
   else if (!near) detailNote = 'Lineups, events and match statistics appear on match day.';
   else {
     try { const r = await pipeline.remote.detail(m); detail = r.value; stale = r.stale; } catch (e) { detailNote = `Match details unavailable: ${e.message}`; }
   }
   const an = analysisMod.analyse(d(), m, p);
-  const bkt = m.sport === 'basketball';
-  const gOf = bkt ? bk.groupOf : engine.groupOf, gx = bkt ? bk.explain : engine.explain;
-  const groups = p ? (bkt ? bk.GROUP_ORDER : engine.GROUP_ORDER).map((g) => ({
-    group: g, items: Object.entries(p.pm).filter(([k]) => gOf(k) === g).map(([k, v]) => ({ id: k, p: v, about: gx(k, m.home.name, m.away.name) })).sort((a, b) => b.p - a.p),
-  })) : [];
+  const gOf = engine.groupOf, gx = engine.explain;
+  // correct score comes from the stored top scorelines (not stored as separate markets, to keep the database small)
+  const csItems = (p?.topScores || []).map((x) => ({ id: `CS ${x.score}`, p: x.p, about: gx(`CS ${x.score}`, m.home.name, m.away.name) }));
+  const groups = p ? engine.GROUP_ORDER.map((g) => ({
+    group: g, items: g === 'Correct score' ? csItems : Object.entries(p.pm).filter(([k]) => gOf(k) === g).map(([k, v]) => ({ id: k, p: v, about: gx(k, m.home.name, m.away.name) })).sort((a, b) => b.p - a.p),
+  })).filter((g) => g.group !== 'Correct score' || g.items.length) : [];
   const rec = (t) => stats.teamRecord(d(), t.id);
   const rh = rec(m.home), ra = rec(m.away);
   const pos = async (t) => (await positionIn(m.league, t.id));
   return {
-    match: { ...matchView(m, true), web: !!m.web, sport: m.sport || 'football', quarters: m.quarters || null, resultSource: m.resultSource || null, sources: m.sources || null, venue: detail?.venue || null, referee: detail?.referee || null },
+    match: { ...matchView(m, true), web: !!m.web, sport: 'football', resultSource: m.resultSource || null, sources: m.sources || null, venue: detail?.venue || null, referee: detail?.referee || null },
     detail, detailNote, stale, markets: groups,
     form: { home: { form: rh.form, recent: rh.recent.map((r) => ({ ...r, opp: teamView(r.opp) })), home: rh.home, away: rh.away }, away: { form: ra.form, recent: ra.recent.map((r) => ({ ...r, opp: teamView(r.opp) })), home: ra.home, away: ra.away } },
     standings: { home: await pos(m.home), away: await pos(m.away) },
@@ -326,14 +342,14 @@ route('GET', /^\/api\/search$/, (req, res, p, q) => {
 });
 
 let lastSportsTest = 0;
-/** Opens API-Sports once for football and once for basketball and says what came back (2 requests; once a minute). */
+/** Opens API-Sports once for football and says what came back (1 request; once a minute). */
 route('GET', /^\/api\/sports-test$/, async () => {
   if (!apisports.enabled()) return { configured: false, note: 'API_SPORTS_KEY is not set in the environment variables' };
   if (Date.now() - lastSportsTest < 60000) throw new HttpError(429, 'Wait a minute before testing again');
   lastSportsTest = Date.now();
   const date = new Date().toISOString().slice(0, 10), out = { configured: true, date };
   try { out.account = await apisports.account(); } catch (e) { out.account = { error: e.message }; }
-  for (const sport of ['football', 'basketball']) {
+  for (const sport of ['football']) {
     try {
       const r = await apisports.day(sport, date);
       const names = [...new Set(r.items.map((x) => `${x.league.name}${x.league.country ? ' (' + x.league.country + ')' : ''}`))];
@@ -373,8 +389,10 @@ const clientId = (req) => { const id = String(req.headers['x-client-id'] || '');
 const list = (v, n, re) => (Array.isArray(v) ? [...new Set(v.map(String).filter((x) => re.test(x)))].slice(0, n) : []);
 function cleanPrefs(b = {}) {
   return {
-    favTeams: list(b.favTeams, 40, /^[\w-]{1,24}$/), favLeagues: list(b.favLeagues, 20, /^[A-Z0-9]{2,6}$/),
+    favTeams: list(b.favTeams, 40, /^[\w-]{1,24}$/), favLeagues: list(b.favLeagues, 40, /^[\w-]{2,40}$/),
     dataSaver: !!b.dataSaver, reduceMotion: !!b.reduceMotion, timeFormat: b.timeFormat === '12h' ? '12h' : '24h',
+    oddsFormat: b.oddsFormat === 'fractional' ? 'fractional' : 'decimal',
+    tz: typeof b.tz === 'string' && /^(auto|UTC|[A-Za-z_]+\/[A-Za-z_+\-0-9]+(\/[A-Za-z_+\-0-9]+)?)$/.test(b.tz) ? b.tz : 'auto',
     startPage: ['home', 'fixtures', 'live', 'matches', 'leagues', 'ai'].includes(b.startPage) ? b.startPage : 'home',
     notify: {
       on: !!b.notify?.on, scope: b.notify?.scope === 'all' ? 'all' : 'favourites',

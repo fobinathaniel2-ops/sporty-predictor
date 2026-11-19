@@ -11,12 +11,14 @@ import MatchCentre from './pages/MatchCentre';
 import { LeaguesPage, LeaguePage } from './pages/Leagues';
 import { TeamsPage, TeamPage } from './pages/Teams';
 import Analyst from './pages/Analyst';
+import Scoreboard from './pages/Scoreboard';
+import Health from './pages/Health';
 import Stats from './pages/Stats';
 import Profile from './pages/Profile';
 
 const SIDE = [
   ['/', 'home', 'Dashboard'], ['/live', 'live', 'Live Matches'], ['/fixtures', 'calendar', 'Fixtures'], ['/results', 'results', 'Results'],
-  ['/leagues', 'trophy', 'Leagues'], ['/teams', 'shield', 'Teams'], ['/ai', 'spark', 'AI Analyst'], ['/stats', 'chart', 'Statistics'], ['/settings', 'gear', 'Settings'],
+  ['/leagues', 'trophy', 'Leagues'], ['/teams', 'shield', 'Teams'], ['/ai', 'spark', 'AI Analyst'], ['/stats', 'chart', 'Statistics'], ['/scoreboard', 'results', 'Scoreboard'], ['/health', 'info', 'Health'], ['/settings', 'gear', 'Settings'],
 ];
 const BOTTOM = [['/', 'home', 'Home'], ['/fixtures', 'calendar', 'Matches'], ['/leagues', 'trophy', 'Leagues'], ['/ai', 'spark', 'AI Analyst'], ['/profile', 'user', 'Profile']];
 
@@ -62,6 +64,8 @@ function Route({ route }) {
     case 'team': return <TeamPage id={b} />;
     case 'ai': return <Analyst />;
     case 'stats': return <Stats />;
+    case 'scoreboard': return <Scoreboard />;
+    case 'health': return <Health />;
     case 'profile': case 'settings': return <Profile settings={a === 'settings'} />;
     default: return <div className="card center" style={{ padding: 40 }}><h2>Page not found</h2><p className="muted" style={{ margin: '8px 0 16px' }}>That page does not exist.</p><A to="/" className="btn">Go home</A></div>;
   }

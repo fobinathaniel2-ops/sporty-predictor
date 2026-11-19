@@ -10,7 +10,6 @@ const dbm = require('./db');
 const engine = require('./engine');
 const ai = require('./ai');
 const sports = require('./sports');
-const bk = require('./basketball');
 
 const DAY = 86400000, HOUR = 3600000;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -169,8 +168,7 @@ function settleAll(now) {
     const m = d.matches[p.matchId];
     if (!m) continue;
     if (m.status === 'FINISHED' && m.ft) {
-      const basket = m.sport === 'basketball';
-      for (const key of ['best', 'statsBest', 'high', 'statsHigh']) if (p[key]) p[key].correct = basket ? bk.settleId(p[key].id, m.ft) : engine.settleId(p[key].id, m.ft, m.ht);
+      for (const key of ['best', 'statsBest', 'high', 'statsHigh']) if (p[key]) p[key].correct = engine.settleId(p[key].id, m.ft, m.ht);
       p.actual = { ft: m.ft, ht: m.ht || null, result: m.ft[0] > m.ft[1] ? '1' : m.ft[0] === m.ft[1] ? 'X' : '2' };
       p.settled = true; p.settledAt = now.toISOString(); p.locked = true; settled++;
     } else if (m.status === 'OTHER' && now - new Date(m.date) > 3 * DAY) {
@@ -257,7 +255,7 @@ function predictAll(now) {
 }
 
 const upcoming = (now, maxMs) => Object.values(dbm.data().predictions)
-  .filter((p) => !p.web && !p.late && p.sport !== 'basketball' && !p.settled && !p.locked && new Date(p.kickoff) > now && new Date(p.kickoff) - now < maxMs && dbm.data().matches[p.matchId])
+  .filter((p) => !p.web && !p.late && !p.settled && !p.locked && new Date(p.kickoff) > now && new Date(p.kickoff) - now < maxMs && dbm.data().matches[p.matchId])
   .sort((a, b) => new Date(a.kickoff) - new Date(b.kickoff));
 
 

@@ -1,9 +1,9 @@
 'use strict';
-// Client for API-Sports (api-sports.io): football fixtures and basketball games, one request per calendar day for ALL leagues.
-// Docs: https://www.api-football.com/documentation-v3 and https://api-sports.io/documentation/basketball/v1
+// Client for API-Sports (api-sports.io): football fixtures, one request per calendar day for ALL leagues.
+// Docs: https://www.api-football.com/documentation-v3
 // Everything is normalised into the same match shape the rest of the app uses. Nothing is invented: a field the API did not send stays null.
 
-const BASE = { football: 'https://v3.football.api-sports.io', basketball: 'https://v1.basketball.api-sports.io' };
+const BASE = { football: 'https://v3.football.api-sports.io' };
 
 class ApiSportsError extends Error { constructor(msg, kind = 'error') { super(msg); this.kind = kind; } } // kind: key | plan | quota | error
 
@@ -35,8 +35,6 @@ async function call(sport, path, params = {}) {
 
 const FOOTBALL_STATUS = { NS: 'SCHEDULED', TBD: 'SCHEDULED', '1H': 'LIVE', HT: 'LIVE', '2H': 'LIVE', ET: 'LIVE', BT: 'LIVE', P: 'LIVE', LIVE: 'LIVE', INT: 'LIVE', SUSP: 'OTHER',
   FT: 'FINISHED', AET: 'FINISHED', PEN: 'FINISHED', PST: 'OTHER', CANC: 'OTHER', ABD: 'OTHER', AWD: 'OTHER', WO: 'OTHER' };
-const BASKET_STATUS = { NS: 'SCHEDULED', Q1: 'LIVE', Q2: 'LIVE', Q3: 'LIVE', Q4: 'LIVE', OT: 'LIVE', BT: 'LIVE', HT: 'LIVE', FT: 'FINISHED', AOT: 'FINISHED',
-  POST: 'OTHER', CANC: 'OTHER', SUSP: 'OTHER', AWD: 'OTHER', ABD: 'OTHER' };
 
 const int = (v) => (Number.isInteger(v) && v >= 0 ? v : null);
 const iso = (v) => { const t = new Date(v); return v && !isNaN(t) ? t.toISOString() : null; };
@@ -62,31 +60,11 @@ function normaliseFootball(f) {
   };
 }
 
-/** API-Basketball game -> same shape. Points are stored where football stores goals. */
-function normaliseBasketball(g) {
-  const id = g?.id, date = iso(g?.date) || (g?.timestamp ? new Date(g.timestamp * 1000).toISOString() : null);
-  const h = g?.teams?.home, a = g?.teams?.away;
-  if (!id || !date || !h?.id || !a?.id || !nm(h.name) || !nm(a.name) || !g?.league?.id) return null;
-  const status = BASKET_STATUS[g.status?.short] || 'OTHER';
-  const ph = int(g.scores?.home?.total), pa = int(g.scores?.away?.total);
-  const q = (side) => [1, 2, 3, 4].map((n) => int(g.scores?.[side]?.[`quarter_${n}`]));
-  const quarters = q('home').every((x) => x !== null) && q('away').every((x) => x !== null) ? { home: q('home'), away: q('away') } : null;
-  return {
-    sport: 'basketball',
-    league: { id: g.league.id, name: nm(g.league.name), country: nm(g.country?.name), logo: g.league.logo || null, season: g.league.season || null, round: null },
-    match: {
-      id: `bk_${id}`, date, status, matchday: null, stage: nm(g.stage) || nm(g.week) || null, season: new Date(date).getUTCFullYear(),
-      home: { id: `bk_t${h.id}`, name: nm(h.name), crest: h.logo || null }, away: { id: `bk_t${a.id}`, name: nm(a.name), crest: a.logo || null },
-      ft: status === 'FINISHED' && ph !== null && pa !== null ? [ph, pa] : null, ht: null, quarters,
-      ext: true, sport: 'basketball', apiStatus: g.status?.short || null,
-    },
-  };
-}
-
-/** All fixtures / games of one UTC calendar day (YYYY-MM-DD), every league. One request. */
+/** All fixtures of one UTC calendar day (YYYY-MM-DD), every league. One request. */
 async function day(sport, date) {
-  const r = await call(sport, sport === 'football' ? '/fixtures' : '/games', { date, timezone: 'UTC' });
-  const norm = sport === 'football' ? normaliseFootball : normaliseBasketball;
+  if (sport !== 'football') throw new ApiSportsError(`unsupported sport: ${sport}`);
+  const r = await call(sport, '/fixtures', { date, timezone: 'UTC' });
+  const norm = normaliseFootball;
   const items = [], rejected = [];
   for (const row of r.rows) { const x = norm(row); if (x) items.push(x); else rejected.push(row?.fixture?.id || row?.id || '?'); }
   return { items, rejected: rejected.length, total: r.rows.length, remaining: r.remaining, limit: r.limit };
@@ -99,4 +77,4 @@ async function account() {
   return { http: r.status, body: j && (j.response && !Array.isArray(j.response) ? { account: { firstname: undefined, plan: j.response.subscription?.plan, active: j.response.subscription?.active, end: j.response.subscription?.end }, requests: j.response.requests } : j) };
 }
 
-module.exports = { enabled, call, day, account, normaliseFootball, normaliseBasketball, ApiSportsError, BASE };
+module.exports = { enabled, call, day, account, normaliseFootball, ApiSportsError, BASE };

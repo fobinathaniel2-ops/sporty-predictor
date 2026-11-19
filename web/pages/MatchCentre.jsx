@@ -4,7 +4,7 @@ import { A, Async, Crest, Empty, FormDots, Note, Ring, Seg, Skel, SkelList, Tag 
 import { CompareRows, DualStat, ProbBars } from '../ui/charts';
 import { PickName } from '../ui/match';
 import { setQuery, useApi, useApp } from '../lib/app';
-import { countdown, fmtLong, isEarly, num, pct, statusText } from '../lib/format';
+import { countdown, fmtLong, fmtOdds, isEarly, num, pct, statusText } from '../lib/format';
 
 const TABS = [['summary', 'Summary'], ['timeline', 'Timeline'], ['stats', 'Stats'], ['lineups', 'Lineups'], ['h2h', 'H2H & Form'], ['ai', 'AI Analysis']];
 
@@ -22,7 +22,7 @@ function Header({ m, standings }) {
         {[['home', m.home], ['away', m.away]].map(([side, t], i) => (
           <A key={side} to={`/team/${t.id}`} className="tm" style={{ order: i === 0 ? 0 : 2 }}>
             <Crest team={t} size={64} /><span>{t.name}</span>
-            {standings?.[side] && m.sport !== 'basketball' && <span className="xs muted">#{standings[side].position} · {standings[side].points} pts</span>}
+            {standings?.[side] && <span className="xs muted">#{standings[side].position} · {standings[side].points} pts</span>}
           </A>
         ))}
         <div className="sc" style={{ order: 1 }}>
@@ -55,6 +55,60 @@ function PickBanner({ p }) {
   );
 }
 
+/** Gemini's pick next to the plain statistics pick, so the two can be compared honestly. */
+function CompareBlock({ p }) {
+  const g = p.best, s = p.statsBest;
+  if (!g || !s || g.source !== 'ai') return null;
+  const same = g.id === s.id;
+  const col = (title, x, tag) => (
+    <div className="tile" style={{ flex: 1 }}>
+      <div className="xs muted">{title}</div>
+      <b style={{ display: 'block', margin: '4px 0' }}>{x.label}</b>
+      <div className="xs muted num">{pct(x.p)} chance · fair {fmtOdds(1 / x.p)}</div>
+      {p.settled && typeof x.correct === 'boolean' && <div style={{ marginTop: 6 }}>{x.correct ? <Tag kind="ok">✓ Right</Tag> : <Tag kind="bad">✗ Wrong</Tag>}</div>}
+    </div>);
+  return (
+    <div className="card" style={{ marginTop: 14 }}>
+      <h4 className="muted" style={{ marginBottom: 8 }}>STATISTICS vs GEMINI</h4>
+      <div className="row" style={{ gap: 10, alignItems: 'stretch' }}>{col('✦ Gemini (searched team news)', g)}{col('Statistics model only', s)}</div>
+      <p className="xs muted" style={{ marginTop: 8 }}>{same ? 'Both agree on this pick.' : 'They disagree. Gemini weighed recent news (injuries, lineups) on top of the numbers; the model uses results and goals only. Neither is guaranteed.'}</p>
+    </div>
+  );
+}
+
+/** Draws the pick as a PNG on a canvas, then shares or downloads it. */
+function ShareButton({ m, p }) {
+  const [busy, setBusy] = useState(false);
+  const make = () => new Promise((resolve) => {
+    const W = 1080, H = 1080, c = document.createElement('canvas'); c.width = W; c.height = H;
+    const x = c.getContext('2d'), b = p.best;
+    const g = x.createLinearGradient(0, 0, W, H); g.addColorStop(0, '#0b1220'); g.addColorStop(1, '#14301f'); x.fillStyle = g; x.fillRect(0, 0, W, H);
+    x.fillStyle = '#34d27b'; x.font = '800 44px system-ui,sans-serif'; x.fillText('PREDICTX', 70, 110);
+    x.fillStyle = '#9fb0c8'; x.font = '600 32px system-ui,sans-serif'; x.fillText(`${m.league.name} · ${fmtLong(m.date)}`, 70, 170, 940);
+    x.fillStyle = '#fff'; x.font = '800 70px system-ui,sans-serif';
+    x.fillText(m.home.name, 70, 330, 940); x.fillStyle = '#9fb0c8'; x.font = '600 40px system-ui,sans-serif'; x.fillText('vs', 70, 400); x.fillStyle = '#fff'; x.font = '800 70px system-ui,sans-serif'; x.fillText(m.away.name, 70, 490, 940);
+    x.fillStyle = 'rgba(255,255,255,.07)'; x.beginPath(); x.roundRect ? x.roundRect(70, 560, 940, 270, 28) : x.rect(70, 560, 940, 270); x.fill();
+    x.fillStyle = '#9fb0c8'; x.font = '700 30px system-ui,sans-serif'; x.fillText('OUR PICK', 110, 620);
+    x.fillStyle = '#34d27b'; x.font = '800 66px system-ui,sans-serif'; x.fillText(b.label, 110, 710, 860);
+    x.fillStyle = '#fff'; x.font = '600 34px system-ui,sans-serif'; x.fillText(`${Math.round(b.p * 100)}% chance · ${p.confidence} confidence · fair odds ${fmtOdds(1 / b.p)}`, 110, 780, 860);
+    x.fillStyle = '#9fb0c8'; x.font = '500 27px system-ui,sans-serif';
+    x.fillText('An estimate from past results. Never guaranteed. 18+ only.', 70, 940, 940);
+    x.fillText('Fair odds are our own 1 ÷ chance, not bookmaker prices.', 70, 985, 940);
+    c.toBlob(resolve, 'image/png');
+  });
+  const share = async () => {
+    setBusy(true);
+    try {
+      const blob = await make(), name = `predictx-${m.home.name}-v-${m.away.name}.png`.replace(/\s+/g, '-');
+      const file = new File([blob], name, { type: 'image/png' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) await navigator.share({ files: [file], title: 'Predictx pick', text: `${m.home.name} v ${m.away.name}: ${p.best.label}` });
+      else { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); }
+    } catch (e) { /* cancelled */ }
+    setBusy(false);
+  };
+  return <button className="chip" style={{ marginTop: 10 }} onClick={share} disabled={busy}>{busy ? 'Making image…' : '↗ Share this pick as an image'}</button>;
+}
+
 function Markets({ groups, bestId }) {
   return (
     <div>
@@ -78,16 +132,12 @@ function Summary({ d }) {
     <div className="stack" style={{ marginTop: 14 }}>
       <div className="card">
         <h3 style={{ marginBottom: 10 }}>{p.kind === 'live' ? 'Result probabilities now' : 'Result probabilities'}</h3>
-        {p.probs ? <ProbBars home={m.home.name} away={m.away.name} probs={p.probs} /> : p.twoWay ? (
-          <div><div style={{ display: 'flex', height: 12, borderRadius: 8, overflow: 'hidden' }}><i style={{ width: `${p.twoWay.home * 100}%`, background: 'var(--g)' }} /><i style={{ width: `${p.twoWay.away * 100}%`, background: 'var(--blue)' }} /></div>
-            <div className="between sm" style={{ marginTop: 8 }}><span>{m.home.name} {pct(p.twoWay.home)}</span><span>{m.away.name} {pct(p.twoWay.away)}</span></div></div>
-        ) : <p className="muted sm">No result model for this match.</p>}
+        {p.probs ? <ProbBars home={m.home.name} away={m.away.name} probs={p.probs} /> : <p className="muted sm">No result model for this match.</p>}
         {p.kind === 'live' && <p className="xs dim" style={{ margin: '8px 0 0' }}>Picked in play at {p.liveAt?.minute}' with the score {p.liveAt?.score?.[0]}-{p.liveAt?.score?.[1]}. Live picks are updated every few minutes and are not counted in the main accuracy figure.</p>}
         {p.kind === 'web' && <p className="xs dim" style={{ margin: '8px 0 0' }}>{p.webNote}</p>}
         {p.inplay && <div className="note info" style={{ marginTop: 10 }}>Live outlook at {p.inplay.minute}' ({p.inplay.score[0]}-{p.inplay.score[1]}): <b>{p.inplay.best.label}</b> · {pct(p.inplay.best.p)} <span className="xs">· {p.inplay.best.about}</span></div>}
         <div className="row wrap" style={{ marginTop: 12, gap: 8 }}>
-          {p.sport === 'basketball' && p.expected && <><span className="tag">Expected score {num(p.expected.home, 0)} – {num(p.expected.away, 0)}</span><span className="tag">Margin {p.expected.margin > 0 ? '+' : ''}{num(p.expected.margin, 1)}</span><span className="tag">Total {num(p.expected.total, 0)}</span></>}
-          {p.sport !== 'basketball' && p.xg?.home != null && <span className="tag">{p.kind === 'live' ? 'xG left' : 'xG'} {num(p.xg.home, 2)} – {num(p.xg.away, 2)}</span>}
+          {p.xg?.home != null && <span className="tag">{p.kind === 'live' ? 'xG left' : 'xG'} {num(p.xg.home, 2)} – {num(p.xg.away, 2)}</span>}
           {p.topScores?.slice(0, 4).map((s) => <span className="tag" key={s.score}>{s.score} · {pct(s.p)}</span>)}
         </div>
       </div>
@@ -258,7 +308,7 @@ export default function MatchCentre({ id, tab }) {
       <Async q={q} skeleton={<><Skel h={210} r={24} /><div style={{ height: 14 }} /><SkelList n={3} /></>}>{(d) => (
         <>
           <Header m={d.match} standings={d.standings} />
-          {d.match.prediction && <PickBanner p={d.match.prediction} />}
+          {d.match.prediction && <><PickBanner p={d.match.prediction} /><CompareBlock p={d.match.prediction} /><ShareButton m={d.match} p={d.match.prediction} /></>}
           <div style={{ margin: '14px 0 0' }}><Seg value={t} onChange={(v) => setQuery('tab', v === 'summary' ? '' : v)} options={TABS} /></div>
           {t === 'summary' && <Summary d={d} />}{t === 'timeline' && <Timeline d={d} />}{t === 'stats' && <Stats d={d} />}
           {t === 'lineups' && <Lineups d={d} />}{t === 'h2h' && <H2H d={d} />}{t === 'ai' && <AI d={d} />}

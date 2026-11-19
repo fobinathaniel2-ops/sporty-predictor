@@ -1,3 +1,4 @@
+import { setFormat } from './format';
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 
 /* ------------------------------------------------------------------------------------------ safe storage ---------- */
@@ -81,11 +82,12 @@ const Ctx = createContext(null);
 export const useApp = () => useContext(Ctx);
 
 export const NOTIFY_DEFAULT = { on: false, scope: 'favourites', types: { goal: true, kickoff: true, fulltime: true, result: true, soon: true } };
-const DEFAULTS = { favTeams: [], favLeagues: [], dataSaver: false, reduceMotion: false, timeFormat: '24h', startPage: 'home', notify: NOTIFY_DEFAULT };
+const DEFAULTS = { favTeams: [], favLeagues: [], dataSaver: false, reduceMotion: false, timeFormat: '24h', oddsFormat: 'decimal', tz: 'auto', startPage: 'home', notify: NOTIFY_DEFAULT };
 
 export function AppProvider({ children }) {
   const [prefs, setPrefsState] = useState(() => ({ ...DEFAULTS, ...store.get('sp_prefs', {}) }));
   const { data: status, error: statusError, reload } = useApi('/api/status', { poll: 60000 });
+  setFormat(prefs); // display settings apply to every formatter before children render
   const saveTimer = useRef(null);
   const [toast, setToast] = useState(null);
 

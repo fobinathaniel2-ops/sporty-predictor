@@ -92,7 +92,8 @@ function groupOf(id) {
   if (['1', 'X', '2'].includes(id)) return 'Match result';
   if (['1X', 'X2', '12'].includes(id)) return 'Double chance';
   if (id.startsWith('DNB')) return 'Draw no bet';
-  if (/^(Over|Under) /.test(id)) return 'Goals';
+  if (/^(Over|Under) /.test(id) || /^Goals \d/.test(id)) return 'Goals';
+  if (/^CS \d/.test(id)) return 'Correct score';
   if (id.startsWith('BTTS')) return 'BTTS';
   if (/^(Home|Away) Over/.test(id)) return 'Team goals';
   if (/Win to Nil$/.test(id)) return 'Win to nil';
@@ -102,7 +103,7 @@ function groupOf(id) {
   return 'Other';
 }
 
-const GROUP_ORDER = ['Match result', 'Double chance', 'Draw no bet', 'Goals', 'BTTS', 'Team goals', 'Win to nil', 'Half-time', 'HT/FT', 'Early payout'];
+const GROUP_ORDER = ['Match result', 'Double chance', 'Draw no bet', 'Goals', 'BTTS', 'Team goals', 'Win to nil', 'Half-time', 'HT/FT', 'Early payout', 'Correct score'];
 
 /** One-line meaning of a pick for this match (shown under the pick name). */
 function explain(id, home, away) {
@@ -125,6 +126,9 @@ function explain(id, home, away) {
   if (og) return og[1] === 'Over' ? `At least ${+og[2] + 1} goals` : `Maximum ${og[2]} goals`;
   const tg = id.match(/^(Home|Away) Over (\d+)\.5$/);
   if (tg) return `${tg[1] === 'Home' ? home : away} score at least ${+tg[2] + 1} goals`;
+  const cs = id.match(/^CS (\d)-(\d)$/);
+  if (cs) return +cs[1] > +cs[2] ? `${home} win ${cs[1]}-${cs[2]}` : +cs[1] < +cs[2] ? `${away} win ${cs[2]}-${cs[1]}` : `${cs[1]}-${cs[2]} draw`;
+  if (id === 'Goals 2-3') return 'Exactly 2 or 3 goals';
   const hf = id.match(/^([12X])\/([12X])$/);
   if (hf) { const w = (c) => (c === '1' ? home : c === '2' ? away : 'draw'); return `Half-time: ${w(hf[1])}. Full-time: ${w(hf[2])}`; }
   return id;
@@ -177,7 +181,7 @@ function marketProbs(lh, la, share, elo1x2) {
     'Under 1.5': 1 - over(1.5), 'Under 2.5': 1 - over(2.5), 'Under 3.5': 1 - over(3.5),
     'BTTS Yes': btts, 'BTTS No': 1 - btts, 'BTTS & Over 2.5': bttsO,
     'Home Over 0.5': 1 - hg[0], 'Home Over 1.5': 1 - hg[0] - hg[1], 'Away Over 0.5': 1 - ag[0], 'Away Over 1.5': 1 - ag[0] - ag[1],
-    'Home Win to Nil': m.slice(1).reduce((s, row) => s + row[0], 0), 'Away Win to Nil': m[0].slice(1).reduce((s, v) => s + v, 0),
+    'Home Win to Nil': m.slice(1).reduce((s, row) => s + row[0], 0), 'Away Win to Nil': m[0].slice(1).reduce((s, v) => s + v, 0),    'Over 4.5': over(4.5), 'Under 4.5': 1 - over(4.5), 'Goals 2-3': (tot[2] || 0) + (tot[3] || 0),
   };
   // halves are modelled as independent Poisson processes
   const H1 = grid(lh * share, la * share), H2 = grid(lh * (1 - share), la * (1 - share));
@@ -330,6 +334,9 @@ function settleId(id, ft, ht, goalSeq) {
     if (own < k) return false; // cannot lead by k without scoring k
     return null;
   };
+  const cs = /^CS (\d)-(\d)$/.exec(id);
+  if (cs) return h === +cs[1] && a === +cs[2];
+  if (id === 'Goals 2-3') return t === 2 || t === 3;
   const og = /^(Over|Under) (\d+)\.5$/.exec(id);
   if (og) return og[1] === 'Over' ? t > +og[2] : t <= +og[2];
   switch (id) {

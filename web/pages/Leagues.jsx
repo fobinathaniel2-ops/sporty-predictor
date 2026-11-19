@@ -26,10 +26,10 @@ export function LeaguesPage() {
       <p className="muted" style={{ marginBottom: 6 }}>Standings, fixtures, results, top scorers and team statistics.</p>
       <Async q={q} skeleton={<SkelCards n={4} h={90} />}>{(ls) => {
         const sorted = [...ls].sort((x, y) => (x.order ?? 999) - (y.order ?? 999));
-        const lg = sorted.filter((l) => l.kind === 'league'), cups = sorted.filter((l) => l.kind === 'cup'), bkl = sorted.filter((l) => l.kind === 'basketball');
+        const lg = sorted.filter((l) => l.kind === 'league'), cups = sorted.filter((l) => l.kind === 'cup');
         const block = (title, list, icon) => list.length ? <Section title={title} icon={icon}><div className="grid g3">{list.map((l) => <LeagueCard key={l.code} l={l} />)}</div></Section> : null;
-        return ls.length ? <>{block('Leagues', lg, 'trophy')}{block('Cups & international', cups, 'ball')}{block('Basketball', bkl, 'ball')}
-          <div style={{ marginTop: 22 }}><Note info>Only the competitions on your list are covered. Gemini searches the web alongside the football-data.org feed: competitions missing from the feed (most cups and African, Asian and American leagues) appear once Gemini finds their matches, with no standings or player stats. Basketball games and extra football leagues come from API-Sports.</Note></div></> :
+        return ls.length ? <>{block('Leagues', lg, 'trophy')}{block('Cups & international', cups, 'ball')}
+          <div style={{ marginTop: 22 }}><Note info>Only the competitions on your list are covered. Gemini searches the web alongside the football-data.org feed: competitions missing from the feed (most cups and African, Asian and American leagues) appear once Gemini finds their matches, with no standings or player stats. Extra football leagues come from API-Sports.</Note></div></> :
           <div style={{ marginTop: 16 }}><Empty icon="trophy" title="No competitions loaded yet">The first data update may still be running.</Empty></div>;
       }}</Async>
     </div>

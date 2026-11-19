@@ -56,14 +56,14 @@ Open `https://YOUR-SITE.vercel.app/api/status`. `configured: true` and growing m
 - Vercel's free plan allows 60 seconds per call, so the updates run in small pieces. That is what the repeats are for.
 
 
-## API-Sports (more football leagues + basketball)
+## API-Sports (more football leagues)
 
 1. Create a free account at https://api-sports.io and copy your API key from the dashboard.
 2. In Vercel: Settings → Environment Variables → add `API_SPORTS_KEY` = your key (Production, Preview, Development) → Redeploy.
 3. In GitHub: Actions → Update data → Run workflow (the `sports` step loads the matches).
-4. Check `https://YOUR-SITE/api/sports-test` (uses 2 requests, once a minute) and `https://YOUR-SITE/api/status` → `sports`.
+4. Check `https://YOUR-SITE/api/sports-test` (uses 1 request, once a minute) and `https://YOUR-SITE/api/status` → `sports`.
 
 Optional settings: `AS_FOOTBALL_SCOPE=all` (every football league the API returns; default keeps the competition list in `competitions.js`),
-`AS_DAYS_AHEAD` (5), `AS_BACKFILL_DAYS` (30, history for the models), `AS_DAILY_CAP` (90 requests per sport per day),
-`AS_BASKETBALL=0` / `AS_FOOTBALL=0` to switch one sport off. One request fetches a whole day of every league, so the free plan's
-100 requests a day per sport is enough. FOOTBALL_DATA_KEY is no longer required.
+`AS_DAYS_AHEAD` (5), `AS_BACKFILL_DAYS` (30, history for the models), `AS_DAILY_CAP` (90 requests per day),
+`AS_FOOTBALL=0` to switch it off. One request fetches a whole day of every league, so the free plan's
+100 requests a day is enough. FOOTBALL_DATA_KEY is no longer required.

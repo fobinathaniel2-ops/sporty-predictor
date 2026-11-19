@@ -1,21 +1,20 @@
 'use strict';
-// API-Sports sync: football and basketball matches for ALL leagues the plan returns, one request per calendar day per sport.
-// Works without FOOTBALL_DATA_KEY. Every request is counted against a daily budget so the free plan (100 requests a day per sport) is never exceeded.
+// API-Sports sync: football matches for ALL leagues on the list that the plan returns, one request per calendar day.
+// Works without FOOTBALL_DATA_KEY. Every request is counted against a daily budget so the free plan (100 requests a day) is never exceeded.
 
 const dbm = require('./db');
 const engine = require('./engine');
-const bk = require('./basketball');
 const comps = require('./competitions');
 const api = require('./apisports');
 
 const DAY = 86400000, HOUR = 3600000;
-const SPORTS = ['football', 'basketball'];
+const SPORTS = ['football'];
 const num = (k, d) => { const v = Number(process.env[k]); return Number.isFinite(v) && v >= 0 ? v : d; };
 const cfg = () => ({
   ahead: Math.min(10, num('AS_DAYS_AHEAD', 5)), back: Math.min(60, num('AS_BACKFILL_DAYS', 30)), perRun: Math.max(1, num('AS_PER_RUN', 4)),
   cap: num('AS_DAILY_CAP', 90), todayMin: num('AS_TODAY_MIN', 30), tomorrowH: num('AS_TOMORROW_HOURS', 3), laterH: num('AS_LATER_HOURS', 6),
   scope: String(process.env.AS_FOOTBALL_SCOPE || 'listed').toLowerCase() === 'all' ? 'all' : 'listed',
-  basketball: process.env.AS_BASKETBALL !== '0', football: process.env.AS_FOOTBALL !== '0',
+  football: process.env.AS_FOOTBALL !== '0',
 });
 
 const ymd = (t) => new Date(t).toISOString().slice(0, 10);
@@ -27,10 +26,11 @@ function meta(now = new Date()) {
   const today = ymd(now);
   if (!m.as) m.as = {};
   const a = m.as;
-  if (a.day !== today) { a.day = today; a.used = { football: 0, basketball: 0 }; a.blocked = {}; a.window = {}; } // a new UTC day: fresh budget, and the plan's date window is learnt again
-  a.used = a.used || { football: 0, basketball: 0 }; a.blocked = a.blocked || {}; a.window = a.window || {};
-  a.fetched = a.fetched || { football: {}, basketball: {} };
-  a.stats = a.stats || { football: {}, basketball: {} };
+  if (a.day !== today) { a.day = today; a.used = { football: 0 }; a.blocked = {}; a.window = {}; } // a new UTC day: fresh budget, and the plan's date window is learnt again
+  a.used = a.used || { football: 0 }; a.blocked = a.blocked || {}; a.window = a.window || {};
+  a.fetched = a.fetched || { football: {} };
+  a.stats = a.stats || { football: {} };
+  for (const k of ['used', 'blocked', 'window', 'fetched', 'stats']) if (a[k]) delete a[k].basketball; // basketball was removed
   return a;
 }
 
@@ -78,17 +78,14 @@ function listed(name, country) {
 /** League for a fetched row, or null when this app should not keep it. */
 function leagueFor(item, c, d) {
   const L = item.league;
-  if (item.sport === 'football') {
-    const canonName = listed(L.name, L.country);
-    if (c.scope === 'listed' && !canonName) return { skip: 'not on the competition list' };
-    const name = canonName || (L.country && !/^world$/i.test(L.country) ? `${L.name} (${L.country})` : L.name);
-    // competitions the football-data.org feed already covers are left to it, so nothing appears twice
-    const covered = Object.values(d.leagues).some((x) => !x.ext && !x.web && !x.demo && x.name === name);
-    if (covered) return { skip: 'already covered by football-data.org' };
-    return { code: `AF_${L.id}`, name, country: L.country, kind: 'football' };
-  }
-  const name = L.country && !/^world$/i.test(L.country) && !L.name.includes(L.country) ? `${L.name} (${L.country})` : L.name;
-  return { code: `BK_${L.id}`, name, country: L.country, kind: 'basketball' };
+  if (item.sport !== 'football') return { skip: 'not football' };
+  const canonName = listed(L.name, L.country);
+  if (c.scope === 'listed' && !canonName) return { skip: 'not on the competition list' };
+  const name = canonName || (L.country && !/^world$/i.test(L.country) ? `${L.name} (${L.country})` : L.name);
+  // competitions the football-data.org feed already covers are left to it, so nothing appears twice
+  const covered = Object.values(d.leagues).some((x) => !x.ext && !x.web && !x.demo && x.name === name);
+  if (covered) return { skip: 'already covered by football-data.org' };
+  return { code: `AF_${L.id}`, name, country: L.country, kind: 'football' };
 }
 
 /** Stores the fetched rows. Returns counts. Existing predictions are never touched here. */
@@ -108,13 +105,24 @@ function ingest(items, now, c = cfg()) {
   return n;
 }
 
+/** Basketball was removed: delete what an earlier version stored (leagues, games, picks, teams). Cheap when there is nothing to delete. */
+function purgeOtherSports() {
+  const d = dbm.data(); let n = 0;
+  for (const [id, m] of Object.entries(d.matches)) if (m.sport === 'basketball' || id.startsWith('bk_')) { delete d.matches[id]; delete d.predictions[id]; n++; }
+  for (const [id, p] of Object.entries(d.predictions)) if (p.sport === 'basketball' || id.startsWith('bk_')) { delete d.predictions[id]; n++; }
+  for (const [code, l] of Object.entries(d.leagues)) if (l.sport === 'basketball' || code.startsWith('BK_')) { delete d.leagues[code]; n++; }
+  for (const id of Object.keys(d.teams)) if (id.startsWith('bk_t')) { delete d.teams[id]; n++; }
+  if (n) { dbm.log('info', 'sports', `removed ${n} basketball records`); }
+  return n;
+}
+
 /** Drops old stored games and the picks that belonged to them (history older than 40 days is not used). */
 function prune(now) {
   const d = dbm.data(), cut = +now - 40 * DAY;
   for (const [id, m] of Object.entries(d.matches)) if (m.ext && new Date(m.date) < cut) { delete d.matches[id]; delete d.predictions[id]; }
   // leagues stored by an earlier version under the wrong country (e.g. Hong Kong's "League Cup" as the EFL Cup) are removed with their matches
   if (cfg().scope === 'listed') for (const [code, l] of Object.entries(d.leagues)) {
-    if (!l.ext || l.sport === 'basketball' || !code.startsWith('AF_') || listed(l.name, l.country)) continue;
+    if (!l.ext || !code.startsWith('AF_') || listed(l.name, l.country)) continue;
     for (const [id, m] of Object.entries(d.matches)) if (m.league === code) { delete d.matches[id]; delete d.predictions[id]; }
     delete d.leagues[code];
   }
@@ -128,6 +136,7 @@ function prune(now) {
 async function sync(now = new Date(), { timeLeft = () => Infinity } = {}) {
   const c = cfg();
   const out = { enabled: api.enabled() };
+  if (purgeOtherSports()) dbm.save();
   if (!api.enabled()) return out;
   const a = meta(now);
   for (const sport of SPORTS) {
@@ -177,55 +186,25 @@ async function sync(now = new Date(), { timeLeft = () => Infinity } = {}) {
 
 const round3 = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, Math.round(v * 1000) / 1000]));
 
-function upsertBasketball(m, pr, now) {
-  const d = dbm.data(), prev = d.predictions[m.id];
-  const home = m.home.name, away = m.away.name;
-  const sb = bk.statsBest(pr.pm, home, away), sh = bk.statsHigh(pr.pm, home, away);
-  let best = { ...sb, source: 'stats', reason: 'Most probable market from team scoring averages.' };
-  let high = sh ? { ...sh, source: 'stats', reason: 'Most probable pick that still pays higher odds, from team scoring averages.' } : null;
-  if (prev?.best?.source === 'ai' && pr.pm[prev.best.id] !== undefined) best = { ...prev.best, p: pr.pm[prev.best.id], odds: bk.fairOdds(pr.pm[prev.best.id]) };
-  if (prev?.high?.source === 'ai' && pr.pm[prev.high.id] !== undefined) high = { ...prev.high, p: pr.pm[prev.high.id], odds: bk.fairOdds(pr.pm[prev.high.id]) };
-  const played = Math.min(pr.played.home, pr.played.away);
-  d.predictions[m.id] = {
-    matchId: m.id, league: m.league, kickoff: m.date, modelVersion: 'bk-1', sport: 'basketball',
-    generatedAt: prev?.generatedAt || now.toISOString(), updatedAt: now.toISOString(),
-    pm: pr.pm, lh: pr.hp, la: pr.ap, topScores: [], expected: { home: pr.hp, away: pr.ap, margin: pr.mu, total: pr.total },
-    context: { elo: { home: null, away: null }, form: pr.form, h2h: { meetings: 0, avgGoalDiff: null }, played: pr.played },
-    confidence: best.p >= 0.7 && played >= 8 ? 'High' : best.p >= 0.58 && played >= 4 ? 'Medium' : 'Low',
-    best, statsBest: sb, high, statsHigh: sh, aiTries: prev?.aiTries || 0, locked: false, settled: false,
-  };
-}
-
 /** Pre-match picks for stored API-Sports games. upsertFootball(m, prediction, now) is the pipeline's own writer. */
 function predict(now, upsertFootball) {
   const d = dbm.data(), c = cfg();
   const horizon = (c.ahead + 1) * DAY;
-  const stats = { football: 0, basketball: 0, skipped: 0 };
-  const ext = Object.values(d.matches).filter((m) => m.ext);
-
-  // football: one pooled model over every stored finished API-Sports match (leagues are too small on their own)
-  const fin = ext.filter((m) => m.sport === 'football' && m.status === 'FINISHED' && m.ft);
-  const fm = engine.buildModel(fin, now);
-  // basketball: one model per league
-  const bmodels = {};
+  const stats = { football: 0, skipped: 0 };
+  const ext = Object.values(d.matches).filter((m) => m.ext && m.sport === 'football');
+  // one pooled model over every stored finished API-Sports match (single leagues are too small on their own)
+  const fm = engine.buildModel(ext.filter((m) => m.status === 'FINISHED' && m.ft), now);
   for (const m of ext) {
     const kick = new Date(m.date), ex = d.predictions[m.id];
     if (m.status !== 'SCHEDULED') continue;
     if (kick <= now) { if (ex && !ex.settled) ex.locked = true; continue; }
     if (ex?.locked || kick - now > horizon) continue;
     try {
-      if (m.sport === 'basketball') {
-        if (!(m.league in bmodels)) bmodels[m.league] = bk.buildModel(ext.filter((x) => x.league === m.league && x.status === 'FINISHED' && x.ft), now);
-        const mod = bmodels[m.league];
-        if (!mod.ok) { stats.skipped++; continue; }
-        upsertBasketball(m, bk.predict(mod, m.home.id, m.away.id), now); stats.basketball++;
-      } else {
-        if (!fm.ok) { stats.skipped++; continue; }
-        upsertFootball(m, engine.predict(fm, m.home.id, m.away.id), now); stats.football++;
-      }
+      if (!fm.ok) { stats.skipped++; continue; }
+      upsertFootball(m, engine.predict(fm, m.home.id, m.away.id), now); stats.football++;
     } catch (e) { stats.skipped++; dbm.log('warn', 'sports', `prediction for ${m.id}: ${e.message}`); }
   }
-  if (!fm.ok && ext.some((m) => m.sport === 'football')) stats.footballModel = fm.reason;
+  if (!fm.ok && ext.length) stats.footballModel = fm.reason;
   return stats;
 }
 
@@ -241,7 +220,7 @@ function status(now = new Date()) {
     matches: count(sport, () => true), upcoming: count(sport, (m) => m.status === 'SCHEDULED' && new Date(m.date) > now), finished: count(sport, (m) => m.status === 'FINISHED'),
     datesFetched: Object.keys(a.fetched[sport] || {}).length,
   });
-  return { configured: api.enabled(), scope: c.scope, football: per('football'), basketball: per('basketball') };
+  return { configured: api.enabled(), scope: c.scope, football: per('football') };
 }
 
-module.exports = { listed, sync, predict, planDates, ingest, leagueFor, status, meta, cfg, prune, SPORTS };
+module.exports = { listed, sync, predict, planDates, ingest, leagueFor, status, meta, cfg, prune, purgeOtherSports, SPORTS };

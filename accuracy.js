@@ -13,15 +13,19 @@ function periodKey(iso, kind) {
   return iso.slice(0, 10);
 }
 
+/** Fair odds of the pick (1 / probability, NOT bookmaker odds) grouped into bands. */
+const ODDS_BANDS = ['Under 1.40', '1.40 - 1.79', '1.80 - 2.49', '2.50 and over'];
+const oddsBand = (o) => (o < 1.4 ? ODDS_BANDS[0] : o < 1.8 ? ODDS_BANDS[1] : o < 2.5 ? ODDS_BANDS[2] : ODDS_BANDS[3]);
+
 function compute(d, { includeDemo }) {
   const settled = Object.values(d.predictions).filter((p) => p.settled && !p.void && p.actual && (includeDemo || !d.leagues[p.league]?.demo));
-  const preds = settled.filter((p) => !p.late && !p.web && p.sport !== 'basketball');
+  const preds = settled.filter((p) => !p.late && !p.web);
   const side = (list) => { const ok = list.filter((p) => p.best && typeof p.best.correct === 'boolean'); const c = ok.filter((p) => p.best.correct).length; return { total: ok.length, correct: c, accuracy: pct(c, ok.length) }; };
   const tally = () => ({ total: 0, correct: 0 });
   const add = (map, key, ok) => { const t = map[key] || (map[key] = tally()); t.total++; if (ok) t.correct++; };
 
   const best = tally(), ai = tally(), stats = tally(), statsOnAi = tally();
-  const byMarket = {}, byLeague = {}, byPick = {}, byConfidence = {};
+  const byMarket = {}, byLeague = {}, byPick = {}, byConfidence = {}, byOdds = {};
   const series = { daily: {}, weekly: {}, monthly: {} };
   let homeWins = 0, unverified = 0, calib = [];
 
@@ -33,6 +37,7 @@ function compute(d, { includeDemo }) {
       add(byMarket, b.market, b.correct);
       add(byPick, b.label, b.correct);
       add(byConfidence, p.confidence, b.correct);
+      if (b.p > 0) add(byOdds, oddsBand(1 / b.p), b.correct);
       calib.push([b.p, b.correct ? 1 : 0]);
       for (const kind of ['daily', 'weekly', 'monthly']) add(series[kind], periodKey(p.kickoff, kind), b.correct);
       if (b.source === 'ai') { ai.total++; if (b.correct) ai.correct++; }
@@ -70,14 +75,14 @@ function compute(d, { includeDemo }) {
     stats: { ...stats, accuracy: pct(stats.correct, stats.total) },
     statsOnAiMatches: { ...statsOnAi, accuracy: pct(statsOnAi.correct, statsOnAi.total) },
     alwaysHomeAccuracy: pct(homeWins, preds.length),
-    byMarket: rows(byMarket), byPick: rows(byPick).slice(0, 12), byLeague: rows(byLeague), byConfidence: rows(byConfidence, order), calibration: buckets,
+    byMarket: rows(byMarket), byPick: rows(byPick).slice(0, 12), byLeague: rows(byLeague), byConfidence: rows(byConfidence, order), byOdds: rows(byOdds, (x, y) => ODDS_BANDS.indexOf(x.key) - ODDS_BANDS.indexOf(y.key)), calibration: buckets,
     series: ser, recent,
     highOdds: (() => { const ok = preds.filter((p) => p.high && typeof p.high.correct === 'boolean'); const c = ok.filter((p) => p.high.correct); const avg = (l) => (l.length ? +(l.reduce((a, p) => a + (p.high.odds || 0), 0) / l.length).toFixed(2) : null);
       const aiOk = ok.filter((p) => p.high.source === 'ai'); const aiC = aiOk.filter((p) => p.high.correct);
       // return on a flat 1-unit stake at the model's own fair odds (NOT bookmaker odds), shown only as a sanity check
       const roi = ok.length ? +(c.reduce((a, p) => a + (p.high.odds || 0), 0) / ok.length - 1).toFixed(3) : null;
       return { total: ok.length, correct: c.length, accuracy: pct(c.length, ok.length), avgFairOdds: avg(ok), ai: { total: aiOk.length, correct: aiC.length, accuracy: pct(aiC.length, aiOk.length) }, fairOddsReturn: roi }; })(),
-    livePicks: side(settled.filter((p) => p.late)), webPicks: side(settled.filter((p) => p.web && !p.late)), basketballPicks: side(settled.filter((p) => p.sport === 'basketball' && !p.late)),
+    livePicks: side(settled.filter((p) => p.late)), webPicks: side(settled.filter((p) => p.web && !p.late)),
   };
 }
 

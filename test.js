@@ -10,6 +10,7 @@ const dbm = require('./db'); dbm.load();
 const ai = require('./ai');
 const engine = require('./engine');
 
+let webPair = null;
 let calls = { choose: 0, research: 0, news: 0, analyse: 0, discover: 0, pickWeb: 0, results: 0 };
 ai.generate = async ({ system, user, search }) => { // fake Gemini: answers in the shape the real one must
   if (/research football matches/.test(system)) {
@@ -20,7 +21,11 @@ ai.generate = async ({ system, user, search }) => { // fake Gemini: answers in t
     calls.discover++; assert(search === true, 'discovery must use web search');
     const names = Object.values(dbm.data().teams).filter((t) => !String(t.id).startsWith('w_')).map((t) => t.name);
     const k = new Date(Date.now() + 5 * 3600000).toISOString();
-    return { text: JSON.stringify([{ home: names[0], away: names[1], competition: 'FA Cup', country: 'England', kickoff: k }, { home: 'Zzz United', away: 'Qqq Rovers', competition: 'Scottish Premiership', country: 'Scotland', kickoff: k }, { home: 'Bad', away: 'Bad', competition: 'x', kickoff: 'nope' }, { home: 'Aaa FC', away: 'Bbb FC', competition: 'Thai League 1', country: 'Thailand', kickoff: k }]), sources: [{ title: 'Fixtures', uri: 'https://example.com/f' }] };
+    // two known teams that have NO fixture against each other in the feed (within 36h of the kickoff; otherwise the app rightly drops the web match as a duplicate, and which pairs meet depends on the clock)
+    const ms = Object.values(dbm.data().matches); const met = (a, b) => ms.some((m) => Math.abs(new Date(m.date) - Date.parse(k)) < 40 * 3600000 && ((m.home.name === a && m.away.name === b) || (m.home.name === b && m.away.name === a)));
+    let pair = webPair || [names[0], names[1]]; if (!webPair) outer: for (let i = names.length - 1; i >= 0; i--) for (let j = i - 1; j >= 0; j--) if (!met(names[i], names[j])) { pair = [names[i], names[j]]; break outer; } // from the end of the list: away from the top-rated team the later checks use
+    webPair = pair; // the same pair on every call (each search group is one call)
+    return { text: JSON.stringify([{ home: pair[0], away: pair[1], competition: 'FA Cup', country: 'England', kickoff: k }, { home: 'Zzz United', away: 'Qqq Rovers', competition: 'Scottish Premiership', country: 'Scotland', kickoff: k }, { home: 'Bad', away: 'Bad', competition: 'x', kickoff: 'nope' }, { home: 'Aaa FC', away: 'Bbb FC', competition: 'Thai League 1', country: 'Thailand', kickoff: k }]), sources: [{ title: 'Fixtures', uri: 'https://example.com/f' }] };
   }
   if (/careful football analyst with Google Search/.test(system)) {
     calls.pickWeb++; assert(search === true);

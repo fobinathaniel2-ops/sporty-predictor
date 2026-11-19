@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { NOTIFY_DEFAULT, useApp } from '../lib/app';
 import { disableAlerts, enableAlerts, permission, pushSupported, sendTest } from '../lib/push';
 
+const TZS = [['auto', 'This device'], ['UTC', 'UTC'], ['Africa/Accra', 'Ghana (Accra)'], ['Africa/Lagos', 'Nigeria (Lagos)'], ['Africa/Nairobi', 'Kenya (Nairobi)'], ['Africa/Johannesburg', 'South Africa'], ['Europe/London', 'London'], ['Europe/Paris', 'Paris / Berlin'], ['America/New_York', 'New York'], ['America/Los_Angeles', 'Los Angeles'], ['Asia/Dubai', 'Dubai'], ['Asia/Kolkata', 'India'], ['Asia/Singapore', 'Singapore'], ['Australia/Sydney', 'Sydney']];
 const START = [['home', 'Dashboard'], ['fixtures', 'Fixtures'], ['live', 'Live'], ['ai', 'AI Analyst']];
 
 function Row({ title, hint, children }) {
@@ -70,6 +71,8 @@ export default function Profile() {
           <Row title="Data saver" hint="Slower refresh, no animations. Good for mobile data and older phones."><Switch on={prefs.dataSaver} onChange={(v) => setPrefs({ dataSaver: v })} label="Data saver" /></Row>
           <Row title="Reduce motion" hint="Turns off shimmer and transitions."><Switch on={prefs.reduceMotion} onChange={(v) => setPrefs({ reduceMotion: v })} label="Reduce motion" /></Row>
           <Row title="Time format"><Seg value={prefs.timeFormat} onChange={(v) => setPrefs({ timeFormat: v })} options={[['24h', '24h'], ['12h', '12h']]} /></Row>
+          <Row title="Odds format" hint="Fair odds are our own 1 ÷ chance, not bookmaker prices."><Seg value={prefs.oddsFormat || 'decimal'} onChange={(v) => setPrefs({ oddsFormat: v })} options={[['decimal', 'Decimal'], ['fractional', 'Fractional']]} /></Row>
+          <Row title="Time zone" hint="Used for kick-off times."><select className="field" style={{ width: 'auto', maxWidth: 190 }} value={prefs.tz || 'auto'} onChange={(e) => setPrefs({ tz: e.target.value })} aria-label="Time zone">{TZS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Row>
           <Row title="Opening page" hint="Where the app starts."><select className="field" style={{ width: 'auto' }} value={prefs.startPage} onChange={(e) => setPrefs({ startPage: e.target.value })} aria-label="Opening page">{START.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Row>
         </div>
       </Section>

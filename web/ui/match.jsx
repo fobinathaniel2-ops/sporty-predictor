@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import Icon from './Icon';
 import { A, Crest, Empty, ErrorState, Modal, Seg, SkelList, Tag, Ring } from './base';
 import { useApi, useApp } from '../lib/app';
-import { addDays, dayKey, fmtTime, isEarly, pct, relDay, scoreOf, startOfDay, statusText } from '../lib/format';
+import { addDays, dayKey, fmtOdds, fmtTime, isEarly, pct, relDay, scoreOf, startOfDay, statusText } from '../lib/format';
 
 export function PickName({ best, size }) {
   const early = isEarly(best.id);
@@ -17,12 +17,12 @@ export function PickLine({ p }) {
   return (
     <div className="mpick">
       <PickName best={b} />
-      <span className="xs muted num">{pct(b.p)}{b.p > 0 ? ` · fair ${(1 / b.p).toFixed(2)}` : ''}</span>
+      <span className="xs muted num">{pct(b.p)}{b.p > 0 ? ` · fair ${fmtOdds(1 / b.p)}` : ''}</span>
       {p.kind === 'live' && <Tag kind="Low">LIVE PICK</Tag>}
       {p.kind === 'web' && <Tag>WEB</Tag>}
       {b.source === 'ai' && <Tag kind="ai">✦ Gemini{b.estimated ? ' est.' : ''}</Tag>}
       {p.settled ? mark(b.correct) : <Tag kind={p.confidence}>{p.confidence}</Tag>}
-      {p.high && <span className="xs" style={{ flexBasis: '100%' }}>💰 High odds: <b>{p.high.label}</b> <span className="muted num">{pct(p.high.p)} · fair {(p.high.odds || 1 / p.high.p).toFixed(2)}</span> {p.settled ? mark(p.high.correct) : null}</span>}
+      {p.high && <span className="xs" style={{ flexBasis: '100%' }}>💰 High odds: <b>{p.high.label}</b> <span className="muted num">{pct(p.high.p)} · fair {fmtOdds(p.high.odds || 1 / p.high.p)}</span> {p.settled ? mark(p.high.correct) : null}</span>}
       {p.inplay && !p.settled && <span className="xs g" style={{ flexBasis: '100%' }}>⚡ Live: {p.inplay.best.label} · {pct(p.inplay.best.p)}</span>}
     </div>
   );
@@ -112,14 +112,12 @@ export function FixtureBrowser({ filter, extra, sortable = false, emptyText, fil
   const [offset, setOffset] = useState(0);
   const [sel, setSel] = useState(dayKey(today));
   const [league, setLeague] = useState('');
-  const [game, setGame] = useState('football'); // football | basketball: the two are never mixed
   const start = addDays(today, offset * 7);
   const days = Array.from({ length: 7 }, (_, i) => addDays(start, i));
   const q = useApi(`/api/fixtures?from=${encodeURIComponent(start.toISOString())}&to=${encodeURIComponent(addDays(start, 7).toISOString())}`, { poll: prefs.dataSaver ? 120000 : 60000 });
   const [sort, setSort] = useState('league');
   const [open, setOpen] = useState(false);
-  const isBk = (m) => m.league.kind === 'basketball';
-  const list = (q.data || []).filter((m) => (game === 'basketball') === isBk(m) && (!filter || filter(m))).sort((a, b) => new Date(a.date) - new Date(b.date));
+  const list = (q.data || []).filter((m) => !filter || filter(m)).sort((a, b) => new Date(a.date) - new Date(b.date));
   const inLeague = (m) => !league || m.league.code === league;
   const inDay = (m) => sel === 'week' || dayKey(new Date(m.date)) === sel;
   const dayCount = {}; list.filter(inLeague).forEach((m) => { const k = dayKey(new Date(m.date)); dayCount[k] = (dayCount[k] || 0) + 1; });
@@ -128,11 +126,11 @@ export function FixtureBrowser({ filter, extra, sortable = false, emptyText, fil
   const shown = list.filter((m) => inDay(m) && inLeague(m));
   const move = (n) => { const o = offset + n; setOffset(o); setSel(o === 0 ? dayKey(today) : 'week'); };
   const fmt = (d) => d.toLocaleDateString([], { day: 'numeric', month: 'short' });
-  const comps = (status?.competitions || status?.leagues || []).filter((l) => (game === 'basketball') === (l.kind === 'basketball'));
+  const comps = status?.competitions || status?.leagues || [];
   const leagueName = league ? ((status?.competitions || status?.leagues || []).find((l) => l.code === league)?.name || league) : 'All competitions';
   const dayName = sel === 'week' ? `${fmt(days[0])} – ${fmt(days[6])}` : sel === dayKey(today) ? 'Today' : new Date(sel + 'T12:00:00').toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'short' });
-  const activeCount = (game === 'basketball' ? 1 : 0) + (league ? 1 : 0) + (sel !== dayKey(today) ? 1 : 0) + (sort !== 'league' ? 1 : 0) + (filterCount || 0);
-  const summary = [game === 'basketball' ? 'Basketball' : null, dayName, leagueName, sortable ? (sort === 'time' ? 'by time' : 'by competition') : null, filterSummary].filter(Boolean).join(' · ');
+  const activeCount = (league ? 1 : 0) + (sel !== dayKey(today) ? 1 : 0) + (sort !== 'league' ? 1 : 0) + (filterCount || 0);
+  const summary = [dayName, leagueName, sortable ? (sort === 'time' ? 'by time' : 'by competition') : null, filterSummary].filter(Boolean).join(' · ');
   return (
     <div>
       <div className="card filterbar">
@@ -153,15 +151,14 @@ export function FixtureBrowser({ filter, extra, sortable = false, emptyText, fil
             <span>{k === dayKey(today) ? 'Today' : d.toLocaleDateString([], { weekday: 'short' })}</span><small>{fmt(d)}</small><i>{dayCount[k] || 0}</i>
           </button>); })}
       </div>
-      <div style={{ margin: '0 0 10px' }}><Seg value={game} onChange={(v) => { setGame(v); setLeague(''); }} options={[['football', 'Football'], ['basketball', 'Basketball']]} /></div>
       <div className="chips">
-        <button className={`chip ${league === '' ? 'on' : ''}`} onClick={() => setLeague('')}>All {game === 'basketball' ? 'basketball leagues' : 'competitions'} <small>{Object.values(leagueCount).reduce((s, n) => s + n, 0)}</small></button>
+        <button className={`chip ${league === '' ? 'on' : ''}`} onClick={() => setLeague('')}>All competitions <small>{Object.values(leagueCount).reduce((s, n) => s + n, 0)}</small></button>
         {comps.map((l) => (
           <button key={l.code} className={`chip ${league === l.code ? 'on' : ''} ${leagueCount[l.code] ? '' : 'dim'}`} onClick={() => setLeague(l.code)}>
             <Crest team={{ name: l.name, crest: l.emblem }} size={18} />{l.name} <small>{leagueCount[l.code] || 0}</small>
           </button>))}
       </div>
-      {typeof extra === 'function' ? extra(game) : extra}
+      {typeof extra === 'function' ? extra('football') : extra}
       {sortable && <div className="sortrow"><span className="xs muted" style={{ fontWeight: 700 }}>SORT</span><Seg value={sort} onChange={setSort} options={[['league', 'By competition'], ['time', 'By kick-off time']]} /></div>}
             </Modal>}
       <div style={{ marginTop: 8 }}>
