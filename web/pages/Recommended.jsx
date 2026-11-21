@@ -2,7 +2,6 @@ import { useMemo, useRef, useState } from 'react';
 import { A, Async, Crest, Empty, Note, Ring, Seg, SkelCards, Tag } from '../ui/base';
 import { useApi, useApp } from '../lib/app';
 import { fmtOdds, fmtTime, pct } from '../lib/format';
-import { slipAdd, slipHas, slipRemove, useSlip } from '../lib/slip';
 
 const NAME = { 1: 'Home win', 2: 'Away win', '1X': 'Home win or draw', X2: 'Draw or away win', 12: 'No draw', 'DNB 1': 'Home win (draw = stake back)', 'DNB 2': 'Away win (draw = stake back)', 'Over 0.5': 'Over 0.5 goals', 'Over 1.5': 'Over 1.5 goals', 'Under 3.5': 'Under 3.5 goals', 'Under 4.5': 'Under 4.5 goals' };
 const dayRange = (offset) => { const a = new Date(); a.setHours(0, 0, 0, 0); a.setDate(a.getDate() + offset); const b = new Date(a); b.setDate(b.getDate() + 1); return [a.toISOString(), b.toISOString()]; };
@@ -11,11 +10,8 @@ const label = (x) => {
   return x.pick === '1' ? `${x.home} win` : x.pick === '2' ? `${x.away} win` : x.pick === '1X' ? `${x.home} or draw` : x.pick === 'X2' ? `Draw or ${x.away}` : t;
 };
 
-function Card({ x, onNext, onPrev, i, n }) {
-  const slip = useSlip();
-  const inSlip = slip.some((s) => s.id === x.matchId);
+function Card({ x, onNext, onPrev, i, n, inSlip }) {
   const touch = useRef(null);
-  const toggle = () => (inSlip ? slipRemove(x.matchId) : slipAdd({ id: x.matchId, h: x.home, a: x.away, l: label(x), p: x.p, k: x.date, lg: x.league }));
   return (
     <div className="card glow" style={{ textAlign: 'center', padding: 22, touchAction: 'pan-y' }}
       onTouchStart={(e) => { touch.current = e.touches[0].clientX; }}
@@ -40,7 +36,7 @@ function Card({ x, onNext, onPrev, i, n }) {
       </div>
       <div className="row" style={{ justifyContent: 'center', gap: 8, marginTop: 16 }}>
         <button className="btn ghost" onClick={onPrev} disabled={i === 0} aria-label="Previous pick">←</button>
-        <button className={inSlip ? 'btn ghost' : 'btn'} onClick={toggle}>{inSlip ? '✓ On your slip' : '+ Add to slip'}</button>
+        {inSlip ? <Tag kind="ok">✓ On today's slip</Tag> : <Tag>Not on the slip</Tag>}
         <button className="btn ghost" onClick={onNext} disabled={i === n - 1} aria-label="Next pick">→</button>
       </div>
       <p className="xs dim" style={{ marginTop: 10 }}><A to={`/match/${x.matchId}`}>Full match details</A></p>
@@ -53,21 +49,21 @@ export default function Recommended() {
   const [i, setI] = useState(0);
   const [from, to] = useMemo(() => dayRange(day), [day]);
   const q = useApi(`/api/recommended?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, { poll: 120000 });
-  const slip = useSlip();
   return (
     <div className="stack" style={{ paddingTop: 8 }}>
       <div className="between"><div><h2>Recommended picks</h2><p className="muted sm">The surest picks for the day, one card at a time.</p></div>
-        <A to="/slip" className="chip">Slip ({slip.length})</A></div>
+        <A to={`/slip${day ? '?day=1' : ''}`} className="chip">Slip</A></div>
       <Seg value={String(day)} onChange={(v) => { setDay(+v); setI(0); }} options={[['0', 'Today'], ['1', 'Tomorrow']]} />
       <Async q={q} skeleton={<SkelCards n={1} h={320} />}>{(r) => {
         const n = r.picks.length, k = Math.min(i, Math.max(0, n - 1));
         return (
           <>
+            {r.slip.ids.length > 0 && <A to={`/slip${day ? '?day=1' : ''}`} className="card lift between"><span><b>{day ? "Tomorrow's slip" : "Today's slip"} is ready</b><br /><span className="xs muted">{r.slip.ids.length} picks, picked for you · all win about {pct(r.slip.combined)} of the time · fair odds {fmtOdds(r.slip.odds)}</span></span><span className="g">→</span></A>}
             {n === 0
               ? <Empty icon="spark" title="No safe pick for this day">{r.considered} matches were checked. None passed the bar: a clear chance of {Math.round(r.minP * 100)}% or more, enough past games for both teams, and no disagreement with Gemini. Showing nothing is better than showing weak picks.</Empty>
               : <>
                 <div className="row" style={{ justifyContent: 'center', gap: 5 }}>{r.picks.map((_, j) => <span key={j} onClick={() => setI(j)} style={{ width: j === k ? 22 : 8, height: 8, borderRadius: 4, background: j === k ? 'var(--g)' : 'rgba(255,255,255,.18)', cursor: 'pointer', transition: 'width .2s' }} />)}</div>
-                <Card x={r.picks[k]} i={k} n={n} onNext={() => setI(Math.min(n - 1, k + 1))} onPrev={() => setI(Math.max(0, k - 1))} />
+                <Card x={r.picks[k]} inSlip={r.slip.ids.includes(r.picks[k].matchId)} i={k} n={n} onNext={() => setI(Math.min(n - 1, k + 1))} onPrev={() => setI(Math.max(0, k - 1))} />
                 <p className="xs muted" style={{ textAlign: 'center' }}>{k + 1} of {n} · swipe or use the arrows</p>
               </>}
             <Note info>Only matches that have not started are shown, from {r.considered} checked. Picks use simple markets where our chance is {Math.round(r.minP * 100)}% or more{r.overconfident ? ' (the bar was raised because our past percentages ran higher than our real results)' : ''}.{r.history.verified ? ` Our overall verified hit rate so far is ${Math.round(r.history.hitRate)}% over ${r.history.verified} picks.` : ''}</Note>

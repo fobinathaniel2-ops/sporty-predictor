@@ -20,7 +20,7 @@ import Profile from './pages/Profile';
 
 const SIDE = [
   ['/', 'home', 'Dashboard'], ['/live', 'live', 'Live Matches'], ['/fixtures', 'calendar', 'Fixtures'], ['/results', 'results', 'Results'],
-  ['/leagues', 'trophy', 'Leagues'], ['/teams', 'shield', 'Teams'], ['/recommended', 'spark', 'Recommended'], ['/slip', 'results', 'My slip'], ['/ai', 'spark', 'AI Analyst'], ['/stats', 'chart', 'Statistics'], ['/scoreboard', 'results', 'Scoreboard'], ['/health', 'info', 'Health'], ['/settings', 'gear', 'Settings'],
+  ['/leagues', 'trophy', 'Leagues'], ['/teams', 'shield', 'Teams'], ['/recommended', 'spark', 'Recommended'], ['/slip', 'results', 'Daily slip'], ['/ai', 'spark', 'AI Analyst'], ['/stats', 'chart', 'Statistics'], ['/scoreboard', 'results', 'Scoreboard'], ['/health', 'info', 'Health'], ['/settings', 'gear', 'Settings'],
 ];
 const BOTTOM = [['/', 'home', 'Home'], ['/fixtures', 'calendar', 'Matches'], ['/leagues', 'trophy', 'Leagues'], ['/ai', 'spark', 'AI Analyst'], ['/profile', 'user', 'Profile']];
 
