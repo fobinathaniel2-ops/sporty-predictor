@@ -1,11 +1,11 @@
 {
   "name": "sporty-predictor",
-  "version": "9.0.0",
+  "version": "9.1.0",
   "description": "Real football data + statistics + Gemini pick selection with verified accuracy tracking",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node test.js && node test-hosted.js && node test-notify.js && node test-sports.js",
+    "test": "node test.js && node test-hosted.js && node test-notify.js && node test-sports.js && node test-recommend.js",
     "bundle": "sh build.sh"
   },
   "engines": {

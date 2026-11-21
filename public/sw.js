@@ -1,4 +1,4 @@
-const V = 'sp-v22';
+const V = 'sp-v23';
 const SHELL = ['/', '/style.css', '/app.js', '/manifest.webmanifest'];
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(V).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));

@@ -13,12 +13,14 @@ import { TeamsPage, TeamPage } from './pages/Teams';
 import Analyst from './pages/Analyst';
 import Scoreboard from './pages/Scoreboard';
 import Health from './pages/Health';
+import Recommended from './pages/Recommended';
+import Slip from './pages/Slip';
 import Stats from './pages/Stats';
 import Profile from './pages/Profile';
 
 const SIDE = [
   ['/', 'home', 'Dashboard'], ['/live', 'live', 'Live Matches'], ['/fixtures', 'calendar', 'Fixtures'], ['/results', 'results', 'Results'],
-  ['/leagues', 'trophy', 'Leagues'], ['/teams', 'shield', 'Teams'], ['/ai', 'spark', 'AI Analyst'], ['/stats', 'chart', 'Statistics'], ['/scoreboard', 'results', 'Scoreboard'], ['/health', 'info', 'Health'], ['/settings', 'gear', 'Settings'],
+  ['/leagues', 'trophy', 'Leagues'], ['/teams', 'shield', 'Teams'], ['/recommended', 'spark', 'Recommended'], ['/slip', 'results', 'My slip'], ['/ai', 'spark', 'AI Analyst'], ['/stats', 'chart', 'Statistics'], ['/scoreboard', 'results', 'Scoreboard'], ['/health', 'info', 'Health'], ['/settings', 'gear', 'Settings'],
 ];
 const BOTTOM = [['/', 'home', 'Home'], ['/fixtures', 'calendar', 'Matches'], ['/leagues', 'trophy', 'Leagues'], ['/ai', 'spark', 'AI Analyst'], ['/profile', 'user', 'Profile']];
 
@@ -64,6 +66,8 @@ function Route({ route }) {
     case 'team': return <TeamPage id={b} />;
     case 'ai': return <Analyst />;
     case 'stats': return <Stats />;
+    case 'recommended': return <Recommended />;
+    case 'slip': return <Slip />;
     case 'scoreboard': return <Scoreboard />;
     case 'health': return <Health />;
     case 'profile': case 'settings': return <Profile settings={a === 'settings'} />;

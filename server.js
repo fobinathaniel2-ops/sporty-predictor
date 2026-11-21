@@ -380,6 +380,11 @@ route('GET', /^\/api\/news$/, async (req) => {
   } catch (e) { return { enabled: true, items: [], sources: [], error: e.message }; }
 });
 
+route('GET', /^\/api\/recommended$/, (req, res, p, q) => {
+  const from = new Date(q.from), to = new Date(q.to);
+  if (isNaN(from) || isNaN(to) || to <= from || to - from > 36 * 3600e3) throw new HttpError(400, 'from/to must be an ISO range of at most 36 hours');
+  return require('./recommend').recommend(d(), { from: from.toISOString(), to: to.toISOString(), includeDemo: pipeline.isDemo() });
+});
 route('GET', /^\/api\/accuracy$/, () => accuracy.compute(d(), { includeDemo: pipeline.isDemo() }));
 
 /* ----------------------------------------------------------------------------------------------- preferences ------- */

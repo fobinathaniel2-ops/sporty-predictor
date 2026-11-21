@@ -46,6 +46,7 @@ export default function Home() {
 
   return (
     <div>
+      <A to="/recommended" className="card lift between" style={{ marginBottom: 12, marginTop: 6 }}><span><b>Recommended picks</b><br /><span className="xs muted">Today's surest picks, card by card</span></span><span className="g">→</span></A>
       <div className="card glow" style={{ padding: '22px 18px', marginTop: 6, background: 'radial-gradient(600px 240px at 0 0,rgba(45,255,138,.16),transparent 70%),var(--card)' }}>
         <p className="muted sm" style={{ fontWeight: 700 }}>{greeting()}</p>
         <h1 style={{ margin: '4px 0 6px' }}>Football, <span className="g">decoded</span>.</h1>
