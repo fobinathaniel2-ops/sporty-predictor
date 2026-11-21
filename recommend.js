@@ -10,7 +10,8 @@
 const accuracy = require('./accuracy');
 
 // Simple, low-noise markets only (no correct score, HT/FT, BTTS, early payout).
-const SAFE = new Set(['1', '2', '1X', 'X2', '12', 'DNB 1', 'DNB 2', 'Over 0.5', 'Over 1.5', 'Under 3.5', 'Under 4.5']);
+const SAFE = new Set(['1', '2', '1X', 'X2', '12', 'DNB 1', 'DNB 2', 'Over 0.5', 'Over 1.5', 'Under 3.5', 'Under 4.5', 'Under 5.5', 'Home Over 0.5', 'Away Over 0.5', 'AH Home +1.5', 'AH Away +1.5', 'Goals 0-1', 'BTTS Yes', 'BTTS No']);
+SAFE.delete('Goals 0-1'); // a low-scoring pick is never 'safe'
 // If the AI's pick is on the left, it also backs everything listed on the right.
 const IMPLIES = { 1: ['1X', '12', 'DNB 1'], 2: ['X2', '12', 'DNB 2'], 'DNB 1': ['1X'], 'DNB 2': ['X2'], 'Over 2.5': ['Over 1.5', 'Over 0.5'], 'Over 1.5': ['Over 0.5'], 'Under 2.5': ['Under 3.5', 'Under 4.5'], 'Under 3.5': ['Under 4.5'] };
 const SIDE = { 1: 'H', '1X': 'H', 'DNB 1': 'H', 2: 'A', X2: 'A', 'DNB 2': 'A' }; // which team a pick backs
@@ -27,7 +28,23 @@ function overconfidence(acc) {
   return { gap: Math.max(0, pred - act), n };
 }
 
+/**
+ * Self-check per market: if a pick type has at least 10 verified results and its real hit rate is
+ * more than 8 points below the chance we claimed for it, stop recommending that type.
+ */
+function weakMarkets(d) {
+  const t = {};
+  for (const p of Object.values(d.predictions)) {
+    const b = p.best;
+    if (!b || typeof b.correct !== 'boolean' || p.late || p.web) continue;
+    const x = t[b.id] || (t[b.id] = { n: 0, hit: 0, sum: 0 });
+    x.n++; x.hit += b.correct ? 1 : 0; x.sum += b.p;
+  }
+  return new Set(Object.entries(t).filter(([, x]) => x.n >= 10 && x.hit / x.n < x.sum / x.n - 0.08).map(([id]) => id));
+}
+
 function recommend(d, { from, to, now = Date.now(), includeDemo = false }) {
+  const weak = weakMarkets(d);
   const acc = accuracy.compute(d, { includeDemo });
   const oc = overconfidence(acc);
   const minP = Math.min(0.85, BASE_MIN + oc.gap);
@@ -45,6 +62,7 @@ function recommend(d, { from, to, now = Date.now(), includeDemo = false }) {
     if (p.confidence === 'Low') continue; // too little data, or the model is not clear
     let best = null;
     for (const id of SAFE) {
+      if (weak.has(id)) continue;
       const v = p.pm[id];
       if (v == null || v < minP || v > MAX_P) continue;
       if (!best || v > best.p) best = { id, p: v };
@@ -68,7 +86,7 @@ function recommend(d, { from, to, now = Date.now(), includeDemo = false }) {
   const comb = picks.reduce((a, x) => a * x.p, 1);
   return {
     slip: { ids: slip, combined: slip.length ? +comb.toFixed(4) : null, odds: slip.length ? +(1 / comb).toFixed(2) : null },
-    from, to, considered, minP, overconfident: oc.gap > 0.03, history: { verified: acc.best.total, hitRate: acc.best.accuracy },
+    from, to, considered, minP, droppedMarkets: [...weak], overconfident: oc.gap > 0.03, history: { verified: acc.best.total, hitRate: acc.best.accuracy },
     picks: picks.slice(0, MAX_PICKS).map(({ score, ...x }) => x),
   };
 }

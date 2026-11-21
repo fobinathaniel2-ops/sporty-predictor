@@ -92,18 +92,23 @@ function groupOf(id) {
   if (['1', 'X', '2'].includes(id)) return 'Match result';
   if (['1X', 'X2', '12'].includes(id)) return 'Double chance';
   if (id.startsWith('DNB')) return 'Draw no bet';
-  if (/^(Over|Under) /.test(id) || /^Goals \d/.test(id)) return 'Goals';
+  if (/^(Over|Under) /.test(id) || /^Goals /.test(id)) return 'Goals';
   if (/^CS \d/.test(id)) return 'Correct score';
+  if (/^(1|X|2|1X|X2|12) & (Over|Under) /.test(id)) return 'Combinations';
   if (id.startsWith('BTTS')) return 'BTTS';
-  if (/^(Home|Away) Over/.test(id)) return 'Team goals';
-  if (/Win to Nil$/.test(id)) return 'Win to nil';
+  if (/^(Home|Away) (Over|Under) /.test(id)) return 'Team goals';
+  if (/Win to Nil$|Clean Sheet$/.test(id)) return 'Win to nil';
+  if (/^(Home|Away) by \d/.test(id)) return 'Winning margin';
+  if (/^(EH|AH) /.test(id)) return 'Handicap';
   if (/^HT /.test(id)) return 'Half-time';
+  if (/^2H /.test(id)) return 'Second half';
+  if (/Either Half$|Both Halves$/.test(id)) return 'Halves';
   if (/^[12X]\/[12X]$/.test(id)) return 'HT/FT';
   if (/^[12]UP /.test(id)) return 'Early payout';
   return 'Other';
 }
 
-const GROUP_ORDER = ['Match result', 'Double chance', 'Draw no bet', 'Goals', 'BTTS', 'Team goals', 'Win to nil', 'Half-time', 'HT/FT', 'Early payout', 'Correct score'];
+const GROUP_ORDER = ['Match result', 'Double chance', 'Draw no bet', 'Goals', 'BTTS', 'Combinations', 'Team goals', 'Win to nil', 'Winning margin', 'Handicap', 'Half-time', 'Second half', 'Halves', 'HT/FT', 'Early payout', 'Correct score'];
 
 /** One-line meaning of a pick for this match (shown under the pick name). */
 function explain(id, home, away) {
@@ -128,6 +133,30 @@ function explain(id, home, away) {
   if (tg) return `${tg[1] === 'Home' ? home : away} score at least ${+tg[2] + 1} goals`;
   const cs = id.match(/^CS (\d)-(\d)$/);
   if (cs) return +cs[1] > +cs[2] ? `${home} win ${cs[1]}-${cs[2]}` : +cs[1] < +cs[2] ? `${away} win ${cs[2]}-${cs[1]}` : `${cs[1]}-${cs[2]} draw`;
+  if (id === 'Goals Odd') return 'Odd number of goals (1, 3, 5...)';
+  if (id === 'Goals Even') return 'Even number of goals (0, 2, 4...)';
+  const gx = id.match(/^Goals (\d)(?:-(\d)|(\+))?$/);
+  if (gx) return gx[3] ? `${gx[1]} or more goals` : gx[2] ? `Between ${gx[1]} and ${gx[2]} goals` : `Exactly ${gx[1]} goal${gx[1] === '1' ? '' : 's'}`;
+  const R = (c) => ({ 1: `${home} win`, X: 'a draw', 2: `${away} win`, '1X': `${home} win or draw`, X2: `a draw or ${away} win`, 12: 'no draw' }[c]);
+  let mm;
+  if ((mm = id.match(/^(1|X|2|1X|X2|12) & (Over|Under) (\d)\.5$/))) return `${R(mm[1])[0].toUpperCase()}${R(mm[1]).slice(1)} and ${mm[2] === 'Over' ? `${+mm[3] + 1}+ goals` : `max ${mm[3]} goals`}`;
+  if ((mm = id.match(/^(Home|Away) Under (\d)\.5$/))) return `${mm[1] === 'Home' ? home : away} score at most ${mm[2]}`;
+  if (id === 'Home Clean Sheet') return `${home} do not concede`;
+  if (id === 'Away Clean Sheet') return `${away} do not concede`;
+  if ((mm = id.match(/^(Home|Away) by (\d)(\+)?$/))) return `${mm[1] === 'Home' ? home : away} win by ${mm[2]}${mm[3] ? ' or more goals' : ` goal${mm[2] === '1' ? '' : 's'} exactly`}`;
+  if ((mm = id.match(/^EH ([12X]) \(([+-]1)\)$/))) return `European handicap ${mm[2]} to ${home}: ${mm[1] === '1' ? `${home} win` : mm[1] === '2' ? `${away} win` : 'draw'} after the handicap`;
+  if ((mm = id.match(/^AH (Home|Away) ([+-][\d.]+)$/))) return `Asian handicap: ${mm[1] === 'Home' ? home : away} ${mm[2]}${/\.5$/.test(mm[2]) ? '' : ' (stake back on a push)'}`;
+  if ((mm = id.match(/^(HT|2H) (1X|X2|12)$/))) return `${mm[1] === 'HT' ? 'First' : 'Second'} half: ${R(mm[2])}`;
+  if ((mm = id.match(/^2H ([12X])$/))) return `${mm[1] === '1' ? home : mm[1] === '2' ? away : 'Nobody'} ${mm[1] === 'X' ? 'wins the second half (level)' : 'win the second half'}`;
+  if ((mm = id.match(/^(HT|2H) (Over|Under) (\d)\.5$/))) return `${mm[1] === 'HT' ? 'First' : 'Second'}-half goals: ${mm[2] === 'Over' ? `at least ${+mm[3] + 1}` : `maximum ${mm[3]}`}`;
+  if ((mm = id.match(/^(HT|2H) BTTS (Yes|No)$/))) return `Both teams ${mm[2] === 'Yes' ? 'score' : 'do not both score'} in the ${mm[1] === 'HT' ? 'first' : 'second'} half`;
+  if (id === 'HT Goals Odd' || id === 'HT Goals Even') return `Odd/even first-half goals: ${id.slice(9)}`;
+  if (id === 'BTTS Both Halves') return 'Both teams score in both halves';
+  if ((mm = id.match(/^(Home|Away) Win (Either Half|Both Halves)$/))) return `${mm[1] === 'Home' ? home : away} win ${mm[2] === 'Either Half' ? 'at least one half' : 'both halves'}`;
+  if (id === 'Goal In Both Halves') return 'At least one goal in each half';
+  if ((mm = id.match(/^(Home|Away) Score Both Halves$/))) return `${mm[1] === 'Home' ? home : away} score in both halves`;
+  if ((mm = id.match(/^BTTS (No )?& (Over|Under) (\d)\.5$/))) return `${mm[1] ? 'Not both teams score' : 'Both teams score'} and ${mm[2] === 'Over' ? `${+mm[3] + 1}+ goals` : `max ${mm[3]} goals`}`;
+  if ((mm = id.match(/^BTTS & ([1X2])$/))) return `Both teams score and ${R(mm[1])}`;
   if (id === 'Goals 2-3') return 'Exactly 2 or 3 goals';
   const hf = id.match(/^([12X])\/([12X])$/);
   if (hf) { const w = (c) => (c === '1' ? home : c === '2' ? away : 'draw'); return `Half-time: ${w(hf[1])}. Full-time: ${w(hf[2])}`; }
@@ -183,25 +212,82 @@ function marketProbs(lh, la, share, elo1x2) {
     'Home Over 0.5': 1 - hg[0], 'Home Over 1.5': 1 - hg[0] - hg[1], 'Away Over 0.5': 1 - ag[0], 'Away Over 1.5': 1 - ag[0] - ag[1],
     'Home Win to Nil': m.slice(1).reduce((s, row) => s + row[0], 0), 'Away Win to Nil': m[0].slice(1).reduce((s, v) => s + v, 0),    'Over 4.5': over(4.5), 'Under 4.5': 1 - over(4.5), 'Goals 2-3': (tot[2] || 0) + (tot[3] || 0),
   };
+  // ---- more full-time markets (all derived from the same score matrix; result-dependent ones use the Elo-blended result odds)
+  const scale = {};
+  let rawH = 0, rawD = 0, rawA = 0;
+  for (let h = 0; h < N; h++) for (let a = 0; a < N; a++) { if (h > a) rawH += m[h][a]; else if (h === a) rawD += m[h][a]; else rawA += m[h][a]; }
+  scale[1] = home / Math.max(1e-9, rawH); scale.X = draw / Math.max(1e-9, rawD); scale[2] = away / Math.max(1e-9, rawA);
+  const acc = {};
+  const add = (id, p) => { acc[id] = (acc[id] || 0) + p; };
+  const cond = {}; // markets with a "push" (stake back): probability = win / (win + lose)
+  const addCond = (id, win, lose) => { const c = cond[id] || (cond[id] = [0, 0]); c[0] += win; c[1] += lose; };
+  for (let h = 0; h < N; h++) for (let a = 0; a < N; a++) {
+    const t = h + a, d = h - a, r = d > 0 ? '1' : d === 0 ? 'X' : '2', p = m[h][a], pr = p * scale[r];
+    const rs = r === '1' ? ['1', '1X', '12'] : r === 'X' ? ['X', '1X', 'X2'] : ['2', 'X2', '12'];
+    // goals
+    for (let x = 0; x <= 5; x++) { add(`Over ${x}.5`, t > x ? p : 0); add(`Under ${x}.5`, t <= x ? p : 0); }
+    add(t % 2 ? 'Goals Odd' : 'Goals Even', p);
+    add(t >= 6 ? 'Goals 6+' : `Goals ${t}`, p);
+    if (t <= 1) add('Goals 0-1', p); else if (t <= 3) add('Goals 2-3', p); else if (t <= 6) add('Goals 4-6', p);
+    // team goals / clean sheets
+    for (let x = 0; x <= 3; x++) { add(`Home Over ${x}.5`, h > x ? p : 0); add(`Home Under ${x}.5`, h <= x ? p : 0); add(`Away Over ${x}.5`, a > x ? p : 0); add(`Away Under ${x}.5`, a <= x ? p : 0); }
+    add('Home Clean Sheet', a === 0 ? p : 0); add('Away Clean Sheet', h === 0 ? p : 0);
+    // BTTS combinations
+    const bt = h > 0 && a > 0;
+    add('BTTS & Over 3.5', bt && t >= 4 ? p : 0); add('BTTS & Under 2.5', bt && t <= 2 ? p : 0); add('BTTS & Under 3.5', bt && t <= 3 ? p : 0);
+    add('BTTS No & Over 2.5', !bt && t >= 3 ? p : 0); add('BTTS No & Under 2.5', !bt && t <= 2 ? p : 0);
+    add(`BTTS & ${r}`, bt ? pr : 0);
+    // result + total goals
+    for (const rr of ['1', 'X', '2', '1X', 'X2', '12']) for (const x of [1, 2, 3]) {
+      const inR = rs.includes(rr);
+      add(`${rr} & Over ${x}.5`, inR && t > x ? pr : 0); add(`${rr} & Under ${x}.5`, inR && t <= x ? pr : 0);
+    }
+    // winning margin
+    add('Home by 1', d === 1 ? pr : 0); add('Home by 2', d === 2 ? pr : 0); add('Home by 3+', d >= 3 ? pr : 0);
+    add('Away by 1', d === -1 ? pr : 0); add('Away by 2', d === -2 ? pr : 0); add('Away by 3+', d <= -3 ? pr : 0);
+    // handicaps (European: three-way. Asian: whole lines give the stake back on a push)
+    for (const hc of [-1, 1]) { const e = d + hc, k = e > 0 ? '1' : e === 0 ? 'X' : '2'; add(`EH ${k} (${hc > 0 ? '+1' : '-1'})`, pr); }
+    add('AH Home -1.5', d >= 2 ? pr : 0); add('AH Away +1.5', d >= 2 ? 0 : pr); add('AH Home +1.5', d <= -2 ? 0 : pr); add('AH Away -1.5', d <= -2 ? pr : 0);
+    addCond('AH Home -1', d >= 2 ? pr : 0, d <= 0 ? pr : 0); addCond('AH Away +1', d <= 0 ? pr : 0, d >= 2 ? pr : 0);
+    addCond('AH Home +1', d >= 0 ? pr : 0, d <= -2 ? pr : 0); addCond('AH Away -1', d <= -2 ? pr : 0, d >= 0 ? pr : 0);
+  }
+  Object.assign(pm, acc);
+  for (const [k, [w, l]] of Object.entries(cond)) pm[k] = w + l > 0 ? w / (w + l) : 0;
   // halves are modelled as independent Poisson processes
   const H1 = grid(lh * share, la * share), H2 = grid(lh * (1 - share), la * (1 - share));
   const sg = (x) => (x > 0 ? '1' : x < 0 ? '2' : 'X');
-  let h1 = 0, hx = 0, h2 = 0, hOver05 = 0, hOver15 = 0;
-  const hft = {};
+  const hft = {}, hm = {};
+  const addH = (id, p) => { hm[id] = (hm[id] || 0) + p; };
+  const halfMarkets = (pre, grid2) => { // markets inside one half
+    for (let i = 0; i < grid2.length; i++) for (let j = 0; j < grid2.length; j++) {
+      const p = grid2[i][j], t = i + j, r = sg(i - j);
+      addH(`${pre} ${r}`, p);
+      if (r !== '2') addH(`${pre} 1X`, p); if (r !== '1') addH(`${pre} X2`, p); if (r !== 'X') addH(`${pre} 12`, p);
+      for (let x = 0; x <= 2; x++) { addH(`${pre} Over ${x}.5`, t > x ? p : 0); addH(`${pre} Under ${x}.5`, t <= x ? p : 0); }
+      addH(`${pre} BTTS ${i > 0 && j > 0 ? 'Yes' : 'No'}`, p);
+      if (pre === 'HT') addH(t % 2 ? 'HT Goals Odd' : 'HT Goals Even', p);
+    }
+  };
+  halfMarkets('HT', H1); halfMarkets('2H', H2);
   for (let i = 0; i < H1.length; i++) for (let j = 0; j < H1.length; j++) {
     const p = H1[i][j];
-    if (i > j) h1 += p; else if (i === j) hx += p; else h2 += p;
-    if (i + j >= 1) hOver05 += p;
-    if (i + j >= 2) hOver15 += p;
     for (let k = 0; k < H2.length; k++) for (let l = 0; l < H2.length; l++) {
+      const pp = p * H2[k][l];
       const key = `${sg(i - j)}/${sg(i + k - (j + l))}`;
-      hft[key] = (hft[key] || 0) + p * H2[k][l];
+      hft[key] = (hft[key] || 0) + pp;
+      const hw1 = i > j, hw2 = k > l, aw1 = j > i, aw2 = l > k;
+      addH('Home Win Either Half', hw1 || hw2 ? pp : 0); addH('Home Win Both Halves', hw1 && hw2 ? pp : 0);
+      addH('Away Win Either Half', aw1 || aw2 ? pp : 0); addH('Away Win Both Halves', aw1 && aw2 ? pp : 0);
+      addH('Goal In Both Halves', i + j >= 1 && k + l >= 1 ? pp : 0);
+      addH('Home Score Both Halves', i >= 1 && k >= 1 ? pp : 0); addH('Away Score Both Halves', j >= 1 && l >= 1 ? pp : 0);
+      addH('BTTS Both Halves', i > 0 && j > 0 && k > 0 && l > 0 ? pp : 0);
     }
   }
-  Object.assign(pm, { 'HT 1': h1, 'HT X': hx, 'HT 2': h2, 'HT Over 0.5': hOver05, 'HT Over 1.5': hOver15, 'HT Under 1.5': 1 - hOver15 });
+  Object.assign(pm, hm);
   for (const k of ['1/1', '1/X', '1/2', 'X/1', 'X/X', 'X/2', '2/1', '2/X', '2/2']) pm[k] = hft[k] || 0;
   const L = lh + la, q = lh / L;
   Object.assign(pm, { '1UP Home': leadProb(L, q, 1), '1UP Away': leadProb(L, 1 - q, 1), '2UP Home': leadProb(L, q, 2), '2UP Away': leadProb(L, 1 - q, 2) });
+  for (const k of Object.keys(pm)) { pm[k] = Math.min(1, Math.max(0, pm[k])); if (pm[k] < 0.02 && !/^[12X]\/[12X]$|^1UP|^2UP/.test(k)) delete pm[k]; }
   return { pm, summary: summarize(m), draw };
 }
 
@@ -278,17 +364,24 @@ function livePredict(model, homeId, awayId, score, minute) {
 }
 
 /** Picks the AI may choose from: probable enough to matter, not so certain that they say nothing (>90%). */
+// Families the main pick may come from. Handicaps, margins, second-half and similar markets are used for the higher-odds pick.
+const MAIN = new Set(['Match result', 'Double chance', 'Draw no bet', 'Goals', 'BTTS', 'Team goals', 'Combinations', 'Win to nil', 'Half-time']);
 function candidates(pm, home, away) {
   const all = Object.entries(pm).map(([id, p]) => ({ id, p }));
-  let c = all.filter((x) => x.p >= 0.5 && x.p <= 0.9).sort((a, b) => b.p - a.p);
+  const main = all.filter((x) => MAIN.has(groupOf(x.id)) && !/^(HT|2H) Under/.test(x.id) && !/ (Odd|Even)$/.test(x.id));
+  let c = main.filter((x) => x.p >= 0.5 && x.p <= 0.9).sort((a, b) => b.p - a.p);
   if (!c.length) c = all.sort((a, b) => b.p - a.p).slice(0, 3);
+  const per = {}; // at most 2 per market family, so the list is not 12 versions of the same idea
+  c = c.filter((x) => (per[groupOf(x.id)] = (per[groupOf(x.id)] || 0) + 1) <= 2);
   return c.slice(0, 12).map((x, i) => ({ cid: `c${i + 1}`, id: x.id, market: groupOf(x.id), pick: x.id, label: x.id, p: x.p, odds: fairOdds(x.p), about: explain(x.id, home, away) }));
 }
 
 /** Higher-odds picks: less likely than the main pick (fair odds roughly 2 to 6), still with a real chance. */
 function highCandidates(pm, home, away) {
   const all = Object.entries(pm).map(([id, p]) => ({ id, p })).filter((x) => x.p >= 0.17 && x.p < 0.5).sort((a, b) => b.p - a.p);
-  return all.slice(0, 10).map((x, i) => ({ cid: `h${i + 1}`, id: x.id, market: groupOf(x.id), pick: x.id, label: x.id, p: x.p, odds: fairOdds(x.p), about: explain(x.id, home, away) }));
+  const per = {};
+  const div = all.filter((x) => (per[groupOf(x.id)] = (per[groupOf(x.id)] || 0) + 1) <= 2 && groupOf(x.id) !== 'Early payout' && !/ (Odd|Even)$/.test(x.id));
+  return div.slice(0, 12).map((x, i) => ({ cid: `h${i + 1}`, id: x.id, market: groupOf(x.id), pick: x.id, label: x.id, p: x.p, odds: fairOdds(x.p), about: explain(x.id, home, away) }));
 }
 const fairOdds = (p) => (p > 0 ? +(1 / p).toFixed(2) : null);
 
@@ -336,7 +429,50 @@ function settleId(id, ft, ht, goalSeq) {
   };
   const cs = /^CS (\d)-(\d)$/.exec(id);
   if (cs) return h === +cs[1] && a === +cs[2];
-  if (id === 'Goals 2-3') return t === 2 || t === 3;
+  // ---- extended markets
+  const sgn = (x) => (x > 0 ? '1' : x < 0 ? '2' : 'X');
+  const inRes = (c, r) => (c.length === 1 ? c === r : c === '1X' ? r !== '2' : c === 'X2' ? r !== '1' : r !== 'X');
+  const d = h - a;
+  let x;
+  if ((x = /^Goals (\d)(?:-(\d)|(\+))?$/.exec(id))) return x[3] ? t >= +x[1] : x[2] ? t >= +x[1] && t <= +x[2] : t === +x[1];
+  if (id === 'Goals Odd') return t % 2 === 1;
+  if (id === 'Goals Even') return t % 2 === 0;
+  if ((x = /^(Home|Away) (Over|Under) (\d)\.5$/.exec(id))) { const g = x[1] === 'Home' ? h : a; return x[2] === 'Over' ? g > +x[3] : g <= +x[3]; }
+  if (id === 'Home Clean Sheet') return a === 0;
+  if (id === 'Away Clean Sheet') return h === 0;
+  if ((x = /^(1|X|2|1X|X2|12) & (Over|Under) (\d)\.5$/.exec(id))) return inRes(x[1], res) && (x[2] === 'Over' ? t > +x[3] : t <= +x[3]);
+  if ((x = /^BTTS (No )?& (Over|Under) (\d)\.5$/.exec(id))) return (x[1] ? !(h > 0 && a > 0) : h > 0 && a > 0) && (x[2] === 'Over' ? t > +x[3] : t <= +x[3]);
+  if ((x = /^BTTS & ([1X2])$/.exec(id))) return h > 0 && a > 0 && res === x[1];
+  if ((x = /^(Home|Away) by (\d)(\+)?$/.exec(id))) { const m = x[1] === 'Home' ? d : -d; return x[3] ? m >= +x[2] : m === +x[2]; }
+  if ((x = /^EH ([12X]) \(([+-]1)\)$/.exec(id))) return sgn(d + (x[2] === '+1' ? 1 : -1)) === x[1];
+  if ((x = /^AH (Home|Away) ([+-]\d(?:\.5)?)$/.exec(id))) { const e = (x[1] === 'Home' ? d : -d) + parseFloat(x[2]); return e === 0 ? null : e > 0; }
+  if (/^(HT|2H) /.test(id) || /(Either Half|Both Halves)$/.test(id)) {
+    if (!ht) return null;
+    const s2 = [h - ht[0], a - ht[1]];
+    const half = (g, rest) => {
+      const gt = g[0] + g[1], gr = sgn(g[0] - g[1]);
+      if ((x = /^([12X])$|^(1X|X2|12)$/.exec(rest))) return inRes(rest, gr);
+      if ((x = /^(Over|Under) (\d)\.5$/.exec(rest))) return x[1] === 'Over' ? gt > +x[2] : gt <= +x[2];
+      if ((x = /^BTTS (Yes|No)$/.exec(rest))) return (g[0] > 0 && g[1] > 0) === (x[1] === 'Yes');
+      if (rest === 'Goals Odd') return gt % 2 === 1;
+      if (rest === 'Goals Even') return gt % 2 === 0;
+      return undefined;
+    };
+    if (id.startsWith('HT ')) { const r = half(ht, id.slice(3)); if (r !== undefined) return r; }
+    if (id.startsWith('2H ')) { const r = half(s2, id.slice(3)); if (r !== undefined) return r; }
+    const w1 = ht[0] - ht[1], w2 = s2[0] - s2[1];
+    switch (id) {
+      case 'Home Win Either Half': return w1 > 0 || w2 > 0;
+      case 'Home Win Both Halves': return w1 > 0 && w2 > 0;
+      case 'Away Win Either Half': return w1 < 0 || w2 < 0;
+      case 'Away Win Both Halves': return w1 < 0 && w2 < 0;
+      case 'Goal In Both Halves': return hg >= 1 && s2[0] + s2[1] >= 1;
+      case 'Home Score Both Halves': return ht[0] >= 1 && s2[0] >= 1;
+      case 'Away Score Both Halves': return ht[1] >= 1 && s2[1] >= 1;
+      default: break;
+    }
+  }
+  if (id === 'BTTS Both Halves') return ht ? ht[0] > 0 && ht[1] > 0 && h - ht[0] > 0 && a - ht[1] > 0 : null;
   const og = /^(Over|Under) (\d+)\.5$/.exec(id);
   if (og) return og[1] === 'Over' ? t > +og[2] : t <= +og[2];
   switch (id) {
@@ -381,4 +517,4 @@ function settleId(id, ft, ht, goalSeq) {
 
 const isEarly = (id) => /^[12]UP /.test(id);
 
-module.exports = { livePredict, MODEL_VERSION, seasonOf, buildModel, predict, candidates, highCandidates, statsHigh, fairOdds, statsBest, confidence, settleId, groupOf, explain, isEarly, GROUP_ORDER };
+module.exports = { __marketProbs: marketProbs, livePredict, MODEL_VERSION, seasonOf, buildModel, predict, candidates, highCandidates, statsHigh, fairOdds, statsBest, confidence, settleId, groupOf, explain, isEarly, GROUP_ORDER };

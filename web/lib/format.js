@@ -57,7 +57,7 @@ export const initials = (n) => String(n || '?').split(/\s+/).filter(Boolean).sli
 
 export const isEarly = (id) => /^[12]UP /.test(id || '');
 export const groupsFor = () => GROUPS;
-export const GROUPS = ['All', 'Match result', 'Double chance', 'Draw no bet', 'Goals', 'BTTS', 'Correct score', 'Team goals', 'Win to nil', 'Half-time', 'HT/FT', 'Early payout'];
+export const GROUPS = ['All', 'Match result', 'Double chance', 'Draw no bet', 'Goals', 'BTTS', 'Combinations', 'Team goals', 'Win to nil', 'Winning margin', 'Handicap', 'Half-time', 'Second half', 'Halves', 'HT/FT', 'Correct score', 'Early payout'];
 
 export function statusText(m) {
   if (m.status === 'LIVE') return m.minute ? `${m.minute}'` : 'LIVE';
