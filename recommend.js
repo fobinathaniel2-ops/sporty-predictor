@@ -14,8 +14,7 @@ const SAFE = new Set(['1', '2', '1X', 'X2', '12', 'DNB 1', 'DNB 2', 'Over 0.5', 
 // If the AI's pick is on the left, it also backs everything listed on the right.
 const IMPLIES = { 1: ['1X', '12', 'DNB 1'], 2: ['X2', '12', 'DNB 2'], 'DNB 1': ['1X'], 'DNB 2': ['X2'], 'Over 2.5': ['Over 1.5', 'Over 0.5'], 'Over 1.5': ['Over 0.5'], 'Under 2.5': ['Under 3.5', 'Under 4.5'], 'Under 3.5': ['Under 4.5'] };
 const SIDE = { 1: 'H', '1X': 'H', 'DNB 1': 'H', 2: 'A', X2: 'A', 'DNB 2': 'A' }; // which team a pick backs
-const SLIP_MAX = 4, SLIP_MIN_COMBINED = 0.5; // never stack picks below a 50% chance of all winning
-const BASE_MIN = 0.72, MAX_P = 0.93, MAX_PICKS = 10;
+const BASE_MIN = 0.72, MAX_P = 0.93, MAX_PICKS = 60;
 
 const agrees = (bestId, id) => bestId === id || (IMPLIES[bestId] || []).includes(id);
 
@@ -64,16 +63,11 @@ function recommend(d, { from, to, now = Date.now(), includeDemo = false }) {
     });
   }
   picks.sort((a, b) => b.score - a.score);
-  // The slip is chosen for the user: the strongest picks, added while the whole slip still has a fair chance.
-  const slip = [];
-  let comb = 1;
-  for (const x of picks) {
-    if (slip.length >= SLIP_MAX) break;
-    if (slip.length && comb * x.p < SLIP_MIN_COMBINED) continue;
-    slip.push(x.matchId); comb *= x.p;
-  }
+  // The slip holds every pick that passed the checks (no cap): the day's safe picks, strongest first.
+  const slip = picks.map((x) => x.matchId);
+  const comb = picks.reduce((a, x) => a * x.p, 1);
   return {
-    slip: { ids: slip, combined: slip.length ? +comb.toFixed(3) : null, odds: slip.length ? +(1 / comb).toFixed(2) : null },
+    slip: { ids: slip, combined: slip.length ? +comb.toFixed(4) : null, odds: slip.length ? +(1 / comb).toFixed(2) : null },
     from, to, considered, minP, overconfident: oc.gap > 0.03, history: { verified: acc.best.total, hitRate: acc.best.accuracy },
     picks: picks.slice(0, MAX_PICKS).map(({ score, ...x }) => x),
   };

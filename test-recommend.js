@@ -8,5 +8,5 @@ const out=r.recommend(d,{from:new Date().toISOString(),to:new Date(Date.now()+30
 const assert=require('assert');
 assert.strictEqual(out.picks.length,1,'only the confident, non-contradicted match qualifies');
 assert.strictEqual(out.picks[0].matchId,'m1'); assert.strictEqual(out.picks[0].pick,'1X'); assert.ok(out.picks[0].aiAgrees);
-assert.ok(out.minP>=0.72); assert.deepStrictEqual(out.slip.ids,['m1']); assert.ok(out.slip.combined>=0.5);
+assert.ok(out.minP>=0.72); assert.deepStrictEqual(out.slip.ids,['m1']); assert.ok(out.slip.combined>0.8);
 console.log('OK recommended picks (low confidence, weak and AI-contradicted matches are skipped)');

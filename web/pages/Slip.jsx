@@ -35,8 +35,8 @@ function View({ list, title, sub, flash }) {
             <button className="btn" onClick={() => copy(text(), 'Slip copied')}>Copy as text</button>
             <button className="btn ghost" onClick={share}>Share link</button>
           </div>
-          <Note info>This slip was chosen for you from the day's recommended picks, using at most 4 picks and stopping before the chance of all winning drops below 50%. It is not a bookmaker booking code: those can only be made inside the bookmaker's own app, so enter these picks there yourself.</Note>
-          <Note>Even a slip like this loses roughly half the time. Picks are estimates and never guaranteed. Only stake what you can afford to lose. 18+ only.</Note>
+          <Note info>This slip holds every pick that passed today's safety checks, with no limit on how many. The more picks it holds, the lower the chance that all of them win, so look at the chance shown above and consider using only the first few. It is not a bookmaker booking code: those can only be made inside the bookmaker's own app, so enter these picks there yourself.</Note>
+          <Note>A slip with many picks loses most of the time, even when each pick is likely. Picks are estimates and never guaranteed. Only stake what you can afford to lose. 18+ only.</Note>
         </>)}
     </>
   );
@@ -45,7 +45,7 @@ function View({ list, title, sub, flash }) {
 export default function Slip() {
   const { flash } = useApp();
   const { query } = useRoute();
-  const [day, setDay] = useState(query.day === '1' ? 1 : 0);
+  const day = 0;
   const shared = useMemo(() => (query.s ? decodeSlip(query.s) : null), [query.s]);
   const [from, to] = useMemo(() => dayRange(day), [day]);
   const q = useApi(shared ? null : `/api/recommended?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, { poll: 120000 });
@@ -53,11 +53,10 @@ export default function Slip() {
     <div className="stack" style={{ paddingTop: 8 }}>
       {shared ? <View list={shared} title="Shared slip" sub="A slip someone shared with you." flash={flash} /> : (
         <>
-          <Seg value={String(day)} onChange={(v) => setDay(+v)} options={[['0', 'Today'], ['1', 'Tomorrow']]} />
           <Async q={q} skeleton={<SkelCards n={2} h={120} />}>{(r) => {
             const by = Object.fromEntries(r.picks.map((x) => [x.matchId, x]));
             const list = r.slip.ids.map((id) => by[id]).filter(Boolean).map((x) => ({ id: x.matchId, h: x.home, a: x.away, l: sideLabel(x), p: x.p, k: x.date, lg: x.league }));
-            return <View list={list} title={day ? "Tomorrow's slip" : "Today's slip"} sub="Chosen for you from the safest picks of the day." flash={flash} />;
+            return <View list={list} title={"Today's slip"} sub="Every safe pick for today, chosen for you." flash={flash} />;
           }}</Async>
         </>)}
     </div>

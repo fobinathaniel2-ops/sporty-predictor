@@ -45,20 +45,19 @@ function Card({ x, onNext, onPrev, i, n, inSlip }) {
 }
 
 export default function Recommended() {
-  const [day, setDay] = useState(0);
+  const day = 0;
   const [i, setI] = useState(0);
   const [from, to] = useMemo(() => dayRange(day), [day]);
   const q = useApi(`/api/recommended?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, { poll: 120000 });
   return (
     <div className="stack" style={{ paddingTop: 8 }}>
-      <div className="between"><div><h2>Recommended picks</h2><p className="muted sm">The surest picks for the day, one card at a time.</p></div>
-        <A to={`/slip${day ? '?day=1' : ''}`} className="chip">Slip</A></div>
-      <Seg value={String(day)} onChange={(v) => { setDay(+v); setI(0); }} options={[['0', 'Today'], ['1', 'Tomorrow']]} />
+      <div className="between"><div><h2>Recommended picks</h2><p className="muted sm">Today's surest picks, one card at a time.</p></div>
+        <A to="/slip" className="chip">Slip</A></div>
       <Async q={q} skeleton={<SkelCards n={1} h={320} />}>{(r) => {
         const n = r.picks.length, k = Math.min(i, Math.max(0, n - 1));
         return (
           <>
-            {r.slip.ids.length > 0 && <A to={`/slip${day ? '?day=1' : ''}`} className="card lift between"><span><b>{day ? "Tomorrow's slip" : "Today's slip"} is ready</b><br /><span className="xs muted">{r.slip.ids.length} picks, picked for you · all win about {pct(r.slip.combined)} of the time · fair odds {fmtOdds(r.slip.odds)}</span></span><span className="g">→</span></A>}
+            {r.slip.ids.length > 0 && <A to="/slip" className="card lift between"><span><b>Today's slip is ready</b><br /><span className="xs muted">{r.slip.ids.length} picks, picked for you · all win about {pct(r.slip.combined)} of the time · fair odds {fmtOdds(r.slip.odds)}</span></span><span className="g">→</span></A>}
             {n === 0
               ? <Empty icon="spark" title="No safe pick for this day">{r.considered} matches were checked. None passed the bar: a clear chance of {Math.round(r.minP * 100)}% or more, enough past games for both teams, and no disagreement with Gemini. Showing nothing is better than showing weak picks.</Empty>
               : <>
